@@ -1,7 +1,7 @@
 <template>
-  <div class="app-wrapper">
+  <div class="app-wrapper" :class="{ 'in-room': isInRoom }">
     <!-- 加入频道视图 -->
-    <div v-if="!isInRoom" class="card-container" style="max-width: 400px;">
+    <div v-if="!isInRoom" class="card-container login-container" style="max-width: 400px;">
       <h1>加入频道</h1>
       <div class="form-group">
         <md-outlined-text-field
@@ -20,76 +20,144 @@
     </div>
 
     <!-- 频道内部视图 -->
-    <div v-else class="card-container">
+    <div v-else class="card-container room-container">
       <div class="header-flex">
         <h1>Web 通话</h1>
         <div style="display: flex; align-items: center; gap: 12px;">
           <span class="badge">{{ userCount }} 人在线</span>
+          <md-icon-button @click="toggleLogs" aria-label="查看日志" :class="{ 'active': showLogs }">
+            <span class="material-symbols-outlined">receipt_long</span>
+          </md-icon-button>
           <md-icon-button @click="leaveRoom" aria-label="退出频道">
             <span class="material-symbols-outlined">logout</span>
           </md-icon-button>
         </div>
       </div>
       
-      <div class="ip-list">
-        <div class="ip-list-title">当前在线 IP:</div>
-        <div v-if="currentRoomUsers.length === 0" class="ip-item" style="color: var(--md-sys-color-outline);">暂无其他用户</div>
-        <div v-for="(user, index) in currentRoomUsers" :key="index" class="ip-item">
-          <span class="ip-item-address">{{ user.ip }}</span>
-          <span class="ip-item-status" :class="getStatusColorClass(user.status)">
-            ({{ user.status }})
-          </span>
+      <div class="room-content">
+        <div class="room-sidebar">
+          <div class="ip-list">
+            <div class="ip-list-title">当前在线 IP:</div>
+            <div v-if="currentRoomUsers.length === 0" class="ip-item" style="color: var(--md-sys-color-outline);">暂无其他用户</div>
+            <div v-for="(user, index) in currentRoomUsers" :key="index" class="ip-item">
+              <span class="ip-item-address">{{ user.ip }}</span>
+              <span class="ip-item-status" :class="getStatusColorClass(user.status)">
+                ({{ user.status }})
+              </span>
+            </div>
+          </div>
+
+          <div class="controls-container">
+            <!-- 扬声器静音按钮 -->
+            <md-icon-button
+              @click="toggleMute"
+              class="mute-btn"
+              :aria-label="isMuted ? '取消静音' : '静音'"
+            >
+              <span class="material-symbols-outlined">
+                {{ isMuted ? 'volume_off' : 'volume_up' }}
+              </span>
+            </md-icon-button>
+
+            <!-- 麦克风主按钮 -->
+            <div class="mic-btn-wrapper">
+              <md-filled-icon-button 
+                v-if="showCallBtn"
+                :disabled="isCallBtnDisabled"
+                @click="toggleCall"
+                class="mic-btn"
+                :class="{ 'mic-active': isCalling }"
+                :aria-label="callBtnText"
+              >
+                <span class="material-symbols-outlined">
+                  {{ isCalling ? 'mic_off' : 'mic' }}
+                </span>
+              </md-filled-icon-button>
+
+              <md-filled-tonal-icon-button 
+                v-if="showRequestTalkBtn"
+                :disabled="isRequestTalkBtnDisabled"
+                @click="requestTalk"
+                class="mic-btn"
+                :aria-label="requestTalkBtnText"
+              >
+                <span class="material-symbols-outlined">
+                  {{ isRequestingTalk ? 'hourglass_empty' : 'waving_hand' }}
+                </span>
+              </md-filled-tonal-icon-button>
+            </div>
+            
+            <!-- 占位元素保持居中平衡 -->
+            <div class="controls-spacer"></div>
+          </div>
         </div>
-      </div>
 
-      <div class="controls-container">
-        <!-- 扬声器静音按钮 -->
-        <md-icon-button
-          @click="toggleMute"
-          class="mute-btn"
-          :aria-label="isMuted ? '取消静音' : '静音'"
-        >
-          <span class="material-symbols-outlined">
-            {{ isMuted ? 'volume_off' : 'volume_up' }}
-          </span>
-        </md-icon-button>
-
-        <!-- 麦克风主按钮 -->
-        <div class="mic-btn-wrapper">
-          <md-filled-icon-button 
-            v-if="showCallBtn"
-            :disabled="isCallBtnDisabled"
-            @click="toggleCall"
-            class="mic-btn"
-            :class="{ 'mic-active': isCalling }"
-            :aria-label="callBtnText"
-          >
-            <span class="material-symbols-outlined">
-              {{ isCalling ? 'mic_off' : 'mic' }}
-            </span>
-          </md-filled-icon-button>
-
-          <md-filled-tonal-icon-button 
-            v-if="showRequestTalkBtn"
-            :disabled="isRequestTalkBtnDisabled"
-            @click="requestTalk"
-            class="mic-btn"
-            :aria-label="requestTalkBtnText"
-          >
-            <span class="material-symbols-outlined">
-              {{ isRequestingTalk ? 'hourglass_empty' : 'waving_hand' }}
-            </span>
-          </md-filled-tonal-icon-button>
+        <!-- 聊天区域 -->
+        <div class="room-chat">
+          <div class="chat-container">
+            <div class="chat-messages" ref="chatMessagesContainer">
+              <div v-for="msg in chatMessages" :key="msg.id" class="chat-message" :class="{'chat-message-self': msg.senderId === clientId}">
+                <div class="chat-message-header">
+                  <span class="chat-sender">{{ msg.senderId === clientId ? '我' : (msg.senderIp ? msg.senderIp.slice(-4) : msg.senderId.slice(0, 4)) }}</span>
+                  <span class="chat-time">{{ new Date(msg.timestamp).toLocaleTimeString() }}</span>
+                </div>
+                <div class="chat-message-content">
+                  <template v-if="msg.type === 'text'">
+                    {{ msg.content }}
+                  </template>
+                  <template v-else-if="msg.type === 'image'">
+                    <a :href="msg.content" target="_blank">
+                      <img :src="msg.content" class="chat-image" />
+                    </a>
+                  </template>
+                  <template v-else-if="msg.type === 'file'">
+                    <a :href="msg.content" target="_blank" class="chat-file">
+                      <span class="material-symbols-outlined">description</span>
+                      {{ msg.fileName }} ({{ formatFileSize(msg.fileSize) }})
+                    </a>
+                  </template>
+                </div>
+              </div>
+            </div>
+            <div class="chat-input-area">
+              <md-icon-button @click="fileInput?.click()" aria-label="发送附件">
+                <span class="material-symbols-outlined">attach_file</span>
+              </md-icon-button>
+              <md-icon-button @click="imageInput?.click()" aria-label="发送图片">
+                <span class="material-symbols-outlined">image</span>
+              </md-icon-button>
+              <input type="file" ref="fileInput" style="display: none" @change="uploadFile($event, 'file')" />
+              <input type="file" ref="imageInput" style="display: none" accept="image/*" @change="uploadFile($event, 'image')" />
+              
+              <md-outlined-text-field
+                class="chat-input-field"
+                placeholder="输入消息(上限1000字)..."
+                :value="chatInput"
+                @input="chatInput = $event.target.value"
+                @keyup.enter="sendTextMessage"
+                @paste="handlePaste"
+                maxlength="1000"
+              ></md-outlined-text-field>
+              <md-icon-button @click="sendTextMessage" aria-label="发送" :disabled="!chatInput.trim()">
+                <span class="material-symbols-outlined">send</span>
+              </md-icon-button>
+            </div>
+          </div>
         </div>
-        
-        <!-- 占位元素保持居中平衡 -->
-        <div class="controls-spacer"></div>
-      </div>
 
-      <!-- 日志区域 -->
-      <div class="logs-container" ref="logsContainer">
-        <div v-for="(log, index) in logs" :key="index" class="log-entry">
-          {{ log }}
+        <!-- 日志悬浮窗 -->
+        <div v-show="showLogs" class="room-logs-popup">
+          <div class="logs-header">
+            <span>运行日志</span>
+            <md-icon-button @click="toggleLogs" aria-label="关闭日志" class="close-logs-btn">
+              <span class="material-symbols-outlined">close</span>
+            </md-icon-button>
+          </div>
+          <div class="logs-container" ref="logsContainer">
+            <div v-for="(log, index) in logs" :key="index" class="log-entry">
+              {{ log }}
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -109,11 +177,50 @@ const isInRoom = ref(false)
 const isConnecting = ref(false)
 const logs = ref<string[]>([])
 const logsContainer = ref<HTMLElement | null>(null)
+const showLogs = ref(false)
+
+const toggleLogs = () => {
+  showLogs.value = !showLogs.value
+  if (showLogs.value) {
+    nextTick(() => {
+      if (logsContainer.value) {
+        logsContainer.value.scrollTop = logsContainer.value.scrollHeight
+      }
+    })
+  }
+}
 
 type RoomUser = {
   id: string
   ip: string
   status: string
+}
+
+// 聊天相关状态
+type ChatMessage = {
+  id: string
+  roomId: string
+  senderId: string
+  senderIp?: string
+  type: string
+  content: string
+  fileName?: string
+  fileSize?: number
+  timestamp: number
+}
+const chatMessages = ref<ChatMessage[]>([])
+const chatInput = ref('')
+const chatMessagesContainer = ref<HTMLElement | null>(null)
+const fileInput = ref<HTMLInputElement | null>(null)
+const imageInput = ref<HTMLInputElement | null>(null)
+
+const formatFileSize = (bytes?: number) => {
+  if (bytes === undefined) return '0 B'
+  if (bytes === 0) return '0 B'
+  const k = 1024
+  const sizes = ['B', 'KB', 'MB', 'GB']
+  const i = Math.floor(Math.log(bytes) / Math.log(k))
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i]
 }
 
 // 房间状态
@@ -164,6 +271,7 @@ let cryptoKey: CryptoKey | null = null
 let controlWs: WebSocket | null = null
 let mediaWs: WebSocket | null = null
 let clientId = ''
+let currentRoomId = ''
 let isCleaningUp = false
 
 // WebRTC
@@ -260,7 +368,13 @@ const joinRoom = async () => {
   }
 
   const roomId = await hashPassword(roomKey.value)
-  clientId = createClientId()
+  currentRoomId = roomId
+  let storedClientId = localStorage.getItem('phonecall_clientId')
+  if (!storedClientId) {
+    storedClientId = createClientId()
+    localStorage.setItem('phonecall_clientId', storedClientId)
+  }
+  clientId = storedClientId
   currentRoomUsers.value = []
   isCleaningUp = false
   mediaChannelReady.value = false
@@ -268,8 +382,102 @@ const joinRoom = async () => {
   isInRoom.value = true
   isConnecting.value = false
   logs.value = []
+  chatMessages.value = []
   logMsg('正在连接服务器进入频道...')
   connectControlChannel(roomId)
+  fetchChatHistory(roomId)
+}
+
+const fetchChatHistory = async (roomId: string) => {
+  try {
+    const res = await fetch(`/api/chat/history?room=${roomId}`)
+    if (res.ok) {
+      const data = await res.json()
+      chatMessages.value = data || []
+      scrollToBottom()
+    }
+  } catch (e) {
+    console.error('Failed to fetch chat history', e)
+  }
+}
+
+const scrollToBottom = () => {
+  nextTick(() => {
+    if (chatMessagesContainer.value) {
+      chatMessagesContainer.value.scrollTop = chatMessagesContainer.value.scrollHeight
+    }
+  })
+}
+
+const sendTextMessage = () => {
+  const content = chatInput.value.trim()
+  if (!content || !isSocketOpen(controlWs)) return
+  
+  if (content.length > 1000) {
+    alert('消息内容超过1000字限制！')
+    return
+  }
+
+  controlWs!.send(JSON.stringify({
+    type: 'chat',
+    content: content
+  }))
+  chatInput.value = ''
+}
+
+const uploadFileObj = async (file: File, type: 'image' | 'file') => {
+  const maxSize = type === 'image' ? 20 * 1024 * 1024 : 100 * 1024 * 1024
+  if (file.size > maxSize) {
+    alert(`文件太大！${type === 'image' ? '图片限制20MB' : '附件限制100MB'}`)
+    return
+  }
+
+  const formData = new FormData()
+  formData.append('file', file)
+  formData.append('room', currentRoomId)
+  formData.append('client', clientId)
+  formData.append('type', type)
+
+  try {
+    logMsg(`正在上传${type === 'image' ? '图片' : '附件'}...`)
+    const res = await fetch('/api/chat/upload', {
+      method: 'POST',
+      body: formData
+    })
+    
+    if (!res.ok) {
+      const err = await res.text()
+      alert('上传失败: ' + err)
+    } else {
+      logMsg('上传成功')
+    }
+  } catch (e) {
+    console.error('Upload error', e)
+    alert('上传发生错误')
+  }
+}
+
+const uploadFile = async (event: Event, type: 'image' | 'file') => {
+  const target = event.target as HTMLInputElement
+  const file = target.files?.[0]
+  if (file) {
+    await uploadFileObj(file, type)
+  }
+  target.value = ''
+}
+
+const handlePaste = (e: ClipboardEvent) => {
+  const items = e.clipboardData?.items
+  if (!items) return
+  for (let i = 0; i < items.length; i++) {
+    const item = items[i]
+    if (item.type.startsWith('image/')) {
+      const file = item.getAsFile()
+      if (file) {
+        uploadFileObj(file, 'image')
+      }
+    }
+  }
 }
 
 const connectControlChannel = (roomId: string) => {
@@ -314,6 +522,9 @@ const connectControlChannel = (roomId: string) => {
         toggleCall(true) // 开启麦克风
       } else if (['webrtc_offer', 'webrtc_answer', 'webrtc_candidate'].includes(data.type)) {
         handleWebRTCSignal(data, clientId, audioConfig.quality, controlWs, getPeerConnection)
+      } else if (data.type === 'chat_message') {
+        chatMessages.value.push(data.data)
+        scrollToBottom()
       }
     } catch (e) {}
   }
@@ -584,5 +795,93 @@ onMounted(async () => {
 <style scoped>
 .font-monospace {
   font-family: monospace;
+}
+
+.chat-container {
+  background: var(--md-sys-color-surface-container-highest);
+  border-radius: 12px;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
+.chat-messages {
+  flex: 1;
+  padding: 12px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.chat-message {
+  display: flex;
+  flex-direction: column;
+  max-width: 80%;
+  align-self: flex-start;
+}
+
+.chat-message-self {
+  align-self: flex-end;
+}
+
+.chat-message-header {
+  font-size: 12px;
+  color: var(--md-sys-color-on-surface-variant);
+  margin-bottom: 4px;
+  display: flex;
+  gap: 8px;
+}
+
+.chat-message-self .chat-message-header {
+  flex-direction: row-reverse;
+}
+
+.chat-message-content {
+  background: var(--md-sys-color-surface);
+  padding: 8px 12px;
+  border-radius: 12px;
+  border-top-left-radius: 4px;
+  color: var(--md-sys-color-on-surface);
+  word-break: break-word;
+  white-space: pre-wrap;
+}
+
+.chat-message-self .chat-message-content {
+  background: var(--md-sys-color-primary-container);
+  color: var(--md-sys-color-on-primary-container);
+  border-top-left-radius: 12px;
+  border-top-right-radius: 4px;
+}
+
+.chat-image {
+  max-width: 100%;
+  max-height: 200px;
+  border-radius: 8px;
+  display: block;
+}
+
+.chat-file {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  text-decoration: none;
+  color: inherit;
+  font-weight: 500;
+}
+
+.chat-input-area {
+  display: flex;
+  align-items: center;
+  padding: 8px;
+  background: var(--md-sys-color-surface-container);
+  border-bottom-left-radius: 12px;
+  border-bottom-right-radius: 12px;
+  gap: 4px;
+}
+
+.chat-input-field {
+  flex: 1;
 }
 </style>

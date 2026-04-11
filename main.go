@@ -3,11 +3,13 @@ package main
 import (
 	"embed"
 	"encoding/json"
+	"fmt"
 	"io/fs"
 	"log"
 	"net"
 	"net/http"
 	"sync"
+	"time"
 
 	"github.com/gorilla/websocket"
 )
@@ -422,6 +424,27 @@ func handleControlConnections(w http.ResponseWriter, r *http.Request) {
 			forwardControlSignal(roomID, client.id, msgData.Type)
 		case "webrtc_offer", "webrtc_answer", "webrtc_candidate":
 			forwardWebRTCSignal(roomID, client.id, p)
+		case "chat":
+			var chatMsgData struct {
+				Content string `json:"content"`
+			}
+			if err := json.Unmarshal(p, &chatMsgData); err == nil {
+				contentRunes := []rune(chatMsgData.Content)
+				if len(contentRunes) > 1000 {
+					chatMsgData.Content = string(contentRunes[:1000])
+				}
+				msg := ChatMessage{
+					ID:        fmt.Sprintf("%d", time.Now().UnixNano()),
+					RoomID:    roomID,
+					SenderID:  clientID,
+					SenderIP:  client.ip,
+					Type:      "text",
+					Content:   chatMsgData.Content,
+					Timestamp: time.Now().UnixMilli(),
+				}
+				saveChatMessage(msg)
+				broadcastChatMessage(roomID, msg)
+			}
 		}
 	}
 }
@@ -474,6 +497,9 @@ func main() {
 	// 启动时只加载一次配置，并赋值给全局变量
 	appConfig = LoadConfig()
 
+	// 初始化聊天存储
+	initChatStorage()
+
 	if err := generateCertIfNotExist(appConfig.CertFile, appConfig.KeyFile); err != nil {
 		log.Fatalf("Failed to generate certificate: %v", err)
 	}
@@ -488,6 +514,11 @@ func main() {
 	http.Handle("/", fileServer)
 	http.HandleFunc("/ws/control", handleControlConnections)
 	http.HandleFunc("/ws/media", handleMediaConnections)
+
+	// 聊天相关API
+	http.HandleFunc("/api/chat/history", handleChatHistoryAPI)
+	http.HandleFunc("/api/chat/upload", handleFileUploadAPI)
+	http.HandleFunc("/api/download/", handleFileDownloadAPI)
 
 	// 提供获取音质配置的 API
 	http.HandleFunc("/api/audio-config", func(w http.ResponseWriter, r *http.Request) {

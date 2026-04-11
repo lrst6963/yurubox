@@ -1,5 +1,8 @@
 # phonecall
 
+## 一个简约的Web聊天室
+<img width="2560" height="1291" alt="image" src="https://github.com/user-attachments/assets/228414f6-f2c2-4525-be9c-39aa2c479a8d" />
+
 ## 编译
 
 ### 前置要求

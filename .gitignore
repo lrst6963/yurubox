@@ -4,3 +4,4 @@ cert.pem
 key.pem
 web/node_modules
 Data/
+web/package-lock.json

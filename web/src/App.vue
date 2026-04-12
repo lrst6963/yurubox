@@ -313,6 +313,7 @@ type RoomUser = {
   ip: string
   name?: string
   status: string
+  video?: boolean
 }
 
 // 聊天相关状态
@@ -545,30 +546,55 @@ const logVideoTrackSettings = (videoTrack: MediaStreamTrack) => {
   logMsg(`视频轨道设置: ${JSON.stringify(settings)}`)
 }
 
+const hasRenderableVideoTrack = (stream: MediaStream) => {
+  return stream.getVideoTracks().some(track => track.readyState === 'live' && !track.muted)
+}
+
+const getPeerSenderByKind = (pc: RTCPeerConnection, kind: 'audio' | 'video') => {
+  const sender = pc.getSenders().find(item => item.track?.kind === kind)
+  if (sender) return sender
+  const transceiver = pc.getTransceivers().find(item => {
+    if (!item.sender) return false
+    if (item.sender.track?.kind === kind) return true
+    return item.receiver.track.kind === kind
+  })
+  return transceiver?.sender || null
+}
+
 const syncPeerConnectionTracks = () => {
   if (audioConfig.protocol !== 'webrtc' || !audioEngine.mediaStream) return
   Object.keys(peerConnections).forEach(pcId => {
     const pc = peerConnections[pcId]
     if (pc.signalingState === 'closed') return
 
-    const senders = pc.getSenders()
-    const newTracks = audioEngine.mediaStream!.getTracks()
+    const nextAudioTrack = audioConfig.audio === false ? null : audioEngine.mediaStream!.getAudioTracks()[0] || null
+    const nextVideoTrack = audioEngine.mediaStream!.getVideoTracks()[0] || null
 
-    senders.forEach(sender => {
-      if (sender.track && (!newTracks.find(t => t.kind === sender.track!.kind) || (sender.track.kind === 'audio' && audioConfig.audio === false))) {
-        pc.removeTrack(sender)
+    const audioSender = getPeerSenderByKind(pc, 'audio')
+    if (audioSender) {
+      if (audioSender.track !== nextAudioTrack) {
+        audioSender.replaceTrack(nextAudioTrack).catch(e => console.warn('Replace audio track failed:', e))
       }
-    })
+    } else if (nextAudioTrack) {
+      pc.addTrack(nextAudioTrack, audioEngine.mediaStream!)
+    }
 
-    newTracks.forEach(track => {
-      if (track.kind === 'audio' && audioConfig.audio === false) return
-      const sender = senders.find(s => s.track && s.track.kind === track.kind)
-      if (sender) {
-        sender.replaceTrack(track).catch(e => console.warn('Replace track failed:', e))
-      } else {
-        pc.addTrack(track, audioEngine.mediaStream!)
+    const videoSender = pc.getSenders().find(sender => sender.track?.kind === 'video')
+    if (!nextVideoTrack) {
+      if (videoSender) {
+        pc.removeTrack(videoSender)
       }
-    })
+      return
+    }
+
+    if (videoSender) {
+      if (videoSender.track !== nextVideoTrack) {
+        videoSender.replaceTrack(nextVideoTrack).catch(e => console.warn('Replace video track failed:', e))
+      }
+      return
+    }
+
+    pc.addTrack(nextVideoTrack, audioEngine.mediaStream!)
   })
 }
 
@@ -613,6 +639,22 @@ const updateLocalVideoPreview = () => {
   })
 }
 
+const syncUsersWithVideoFromRoomInfo = () => {
+  const nextUsersWithVideo = currentRoomUsers.value.filter(user => !!user.video)
+  usersWithVideo.value = nextUsersWithVideo
+
+  nextTick(() => {
+    nextUsersWithVideo.forEach(user => {
+      if (user.id === clientId) return
+      const remoteVideo = audioEngine.remoteAudioElements[user.id]
+      const container = document.getElementById(`video_container_${user.id}`)
+      if (remoteVideo && container && !container.contains(remoteVideo)) {
+        container.appendChild(remoteVideo)
+      }
+    })
+  })
+}
+
 const removeLocalVideoTracks = () => {
   if (!audioEngine.mediaStream) return
   audioEngine.mediaStream.getVideoTracks().forEach(track => {
@@ -627,6 +669,12 @@ const removeLocalAudioTracks = () => {
     audioEngine.mediaStream!.removeTrack(track)
     track.stop()
   })
+}
+
+const reportVideoState = (hasVideo: boolean) => {
+  if (isSocketOpen(controlWs)) {
+    controlWs!.send(JSON.stringify({ type: 'update_video', video: hasVideo }))
+  }
 }
 
 const startVideoTrackWithFallback = async () => {
@@ -700,27 +748,31 @@ const getPeerConnection = (targetId: string) => {
       audioEngine.remoteAudioElements[id] = remoteAudio
       
       const updateVisibility = () => {
-        const hasVideo = stream.getVideoTracks().length > 0
+        const hasVideo = hasRenderableVideoTrack(stream)
         remoteAudio.style.display = hasVideo ? 'block' : 'none'
-        
-        const userIndex = usersWithVideo.value.findIndex(u => u.id === id)
-        if (hasVideo && userIndex === -1) {
-          const user = currentRoomUsers.value.find(u => u.id === id)
-          if (user) {
-            usersWithVideo.value.push(user)
-            nextTick(() => {
-              const updatedContainer = document.getElementById(`video_container_${id}`)
-              if (updatedContainer && !updatedContainer.contains(remoteAudio)) {
-                updatedContainer.appendChild(remoteAudio)
-              }
-            })
-          }
-        } else if (!hasVideo && userIndex !== -1) {
-          usersWithVideo.value.splice(userIndex, 1)
+        const user = currentRoomUsers.value.find(item => item.id === id)
+        if (hasVideo && user?.video) {
+          nextTick(() => {
+            const updatedContainer = document.getElementById(`video_container_${id}`)
+            if (updatedContainer && !updatedContainer.contains(remoteAudio)) {
+              updatedContainer.appendChild(remoteAudio)
+            }
+          })
         }
       }
+      const bindVideoTrackEvents = () => {
+        stream.getVideoTracks().forEach(track => {
+          track.onmute = updateVisibility
+          track.onunmute = updateVisibility
+          track.onended = updateVisibility
+        })
+      }
+      bindVideoTrackEvents()
       updateVisibility()
-      stream.onaddtrack = updateVisibility
+      stream.onaddtrack = () => {
+        bindVideoTrackEvents()
+        updateVisibility()
+      }
       stream.onremovetrack = updateVisibility
 
       if (!remoteAudio.isConnected) {
@@ -1269,6 +1321,7 @@ const connectMediaChannel = (roomId: string) => {
 
 const updateRoomInfo = (data: any) => {
   currentRoomUsers.value = Array.isArray(data.users) ? data.users : []
+  syncUsersWithVideoFromRoomInfo()
 
   if (audioConfig.protocol === 'webrtc') {
     currentRoomUsers.value.forEach(u => {
@@ -1342,17 +1395,20 @@ const toggleVideo = async () => {
     try {
       if (isVideoOn.value) {
         await startVideoTrackWithFallback()
+        reportVideoState(true)
         logMsg('已打开摄像头')
         await loadVideoDevices()
       } else {
         removeLocalVideoTracks()
         syncPeerConnectionTracks()
         updateLocalVideoPreview()
+        reportVideoState(false)
         logMsg('已关闭摄像头')
       }
     } catch (e: any) {
       isVideoOn.value = false
       audioConfig.video = false
+      reportVideoState(false)
       logMsg('无法打开摄像头: ' + e.message)
     }
     return
@@ -1363,6 +1419,7 @@ const toggleVideo = async () => {
       audioEngine.stopCapture()
       audioConfig.audio = isCalling.value
       await startCaptureWithVideoDeviceFallback()
+      reportVideoState(isVideoOn.value)
       logMsg(isVideoOn.value ? '已打开摄像头' : '已关闭摄像头')
       if (isVideoOn.value) {
         await loadVideoDevices()
@@ -1370,6 +1427,7 @@ const toggleVideo = async () => {
     } catch (e: any) {
       isVideoOn.value = false
       audioConfig.video = false
+      reportVideoState(false)
       logMsg('无法打开摄像头: ' + e.message)
       if (isCalling.value) {
         try {
@@ -1394,9 +1452,11 @@ const changeVideoDevice = async () => {
     try {
       if (audioEngine.mediaStream) {
         await startVideoTrackWithFallback()
+        reportVideoState(true)
       } else {
         audioConfig.audio = isCalling.value
         await startCaptureWithVideoDeviceFallback()
+        reportVideoState(true)
       }
       logMsg('已切换摄像头')
     } catch (e: any) {

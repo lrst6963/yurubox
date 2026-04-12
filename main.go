@@ -29,6 +29,7 @@ type Client struct {
 	ip          string
 	name        string
 	status      string
+	hasVideo    bool
 	controlConn *websocket.Conn
 	mediaConn   *websocket.Conn
 	writeMu     sync.Mutex
@@ -48,6 +49,7 @@ type UserInfo struct {
 	IP     string `json:"ip"`
 	Name   string `json:"name"`
 	Status string `json:"status"`
+	Video  bool   `json:"video"`
 }
 
 // RoomInfo 存储下发给客户端的房间统计信息
@@ -77,6 +79,7 @@ func broadcastRoomInfo(roomID string) {
 			IP:     c.ip,
 			Name:   c.name,
 			Status: c.status,
+			Video:  c.hasVideo,
 		})
 	}
 	roomsMutex.Unlock()
@@ -160,7 +163,7 @@ func registerControlClient(roomID, clientID, ip, name string, conn *websocket.Co
 			roomsMutex.Unlock()
 			return nil, nil, nil, false
 		}
-		client = &Client{id: clientID, ip: ip, name: normalizedName, status: "就绪"}
+		client = &Client{id: clientID, ip: ip, name: normalizedName, status: "就绪", hasVideo: false}
 		rooms[roomID][clientID] = client
 	} else {
 		if client.controlConn == nil && appConfig.Mode == "walkie-talkie" && countActiveClients(rooms[roomID]) >= 2 {
@@ -174,6 +177,7 @@ func registerControlClient(roomID, clientID, ip, name string, conn *websocket.Co
 	client.ip = ip
 	client.name = normalizedName
 	client.status = "就绪"
+	client.hasVideo = false
 	client.controlConn = conn
 	client.mediaConn = nil
 	roomsMutex.Unlock()
@@ -217,6 +221,24 @@ func updateClientStatus(roomID, clientID, status string) bool {
 	}
 
 	client.status = status
+	return true
+}
+
+func updateClientVideoState(roomID, clientID string, hasVideo bool) bool {
+	roomsMutex.Lock()
+	defer roomsMutex.Unlock()
+
+	clientsMap := rooms[roomID]
+	if clientsMap == nil {
+		return false
+	}
+
+	client := clientsMap[clientID]
+	if client == nil || client.controlConn == nil {
+		return false
+	}
+
+	client.hasVideo = hasVideo
 	return true
 }
 
@@ -446,6 +468,7 @@ func handleControlConnections(w http.ResponseWriter, r *http.Request) {
 			Type   string `json:"type"`
 			Status string `json:"status"`
 			ToIP   string `json:"toIP"`
+			Video  bool   `json:"video"`
 		}
 		if err := json.Unmarshal(p, &msgData); err != nil {
 			continue
@@ -454,6 +477,10 @@ func handleControlConnections(w http.ResponseWriter, r *http.Request) {
 		switch msgData.Type {
 		case "update_status":
 			if updateClientStatus(roomID, clientID, msgData.Status) {
+				broadcastRoomInfo(roomID)
+			}
+		case "update_video":
+			if updateClientVideoState(roomID, clientID, msgData.Video) {
 				broadcastRoomInfo(roomID)
 			}
 		case "update_name":
@@ -569,13 +596,13 @@ func main() {
 	// 提供获取音质配置的 API
 	http.HandleFunc("/api/audio-config", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		
+
 		// 判断是否有预设
 		qualityLabel := appConfig.Quality
 		if qualityLabel == "" {
 			qualityLabel = "custom"
 		}
-		
+
 		json.NewEncoder(w).Encode(map[string]interface{}{
 			"mode":       appConfig.Mode,
 			"protocol":   appConfig.Protocol,

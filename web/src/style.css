@@ -584,6 +584,9 @@ md-outlined-text-field {
   border-bottom: 1px solid var(--md-sys-color-outline-variant);
   border-radius: 10px;
   transition: background-color 0.2s ease, color 0.2s ease;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
 }
 
 .ip-item-address {
@@ -683,4 +686,22 @@ md-outlined-text-field {
 
 ::-webkit-scrollbar-corner {
   background: transparent;
+}
+
+.chat-menu-mask {
+  position: fixed;
+  inset: 0;
+  z-index: 300;
+}
+
+.chat-message-menu {
+  position: fixed;
+  width: 180px;
+  padding: 6px 0;
+  border-radius: 14px;
+  background: var(--md-sys-color-surface);
+  box-shadow: var(--md-elevation-2);
+  border: 1px solid var(--md-sys-color-outline-variant);
+  max-height: 90vh;
+  overflow-y: auto;
 }

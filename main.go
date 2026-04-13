@@ -25,15 +25,17 @@ var upgrader = websocket.Upgrader{
 }
 
 type Client struct {
-	id          string
-	ip          string
-	name        string
-	avatar      string
-	status      string
-	hasVideo    bool
-	controlConn *websocket.Conn
-	mediaConn   *websocket.Conn
-	writeMu     sync.Mutex
+	id              string
+	ip              string
+	name            string
+	avatar          string
+	status          string
+	hasVideo        bool
+	mutedUntil      int64
+	mediaMutedUntil int64
+	controlConn     *websocket.Conn
+	mediaConn       *websocket.Conn
+	writeMu         sync.Mutex
 }
 
 var (
@@ -46,12 +48,26 @@ var (
 
 // UserInfo 表示房间内的单个用户信息
 type UserInfo struct {
-	ID     string `json:"id"`
-	IP     string `json:"ip"`
-	Name   string `json:"name"`
-	Avatar string `json:"avatar"`
-	Status string `json:"status"`
-	Video  bool   `json:"video"`
+	ID         string `json:"id"`
+	IP         string `json:"ip"`
+	Name       string `json:"name"`
+	Avatar     string `json:"avatar"`
+	Status     string `json:"status"`
+	Video      bool   `json:"video"`
+	IsAdmin    bool   `json:"isAdmin"`
+	MediaMuted bool   `json:"mediaMuted"`
+	TextMuted  bool   `json:"textMuted"`
+}
+
+func isAdminIP(ipStr string) bool {
+	if ipStr == "localhost" || ipStr == "::1" || ipStr == "127.0.0.1" {
+		return true
+	}
+	ip := net.ParseIP(ipStr)
+	if ip == nil {
+		return false
+	}
+	return ip.IsLoopback() || ip.IsPrivate()
 }
 
 // RoomInfo 存储下发给客户端的房间统计信息
@@ -77,12 +93,15 @@ func broadcastRoomInfo(roomID string) {
 		}
 		recipients = append(recipients, c)
 		users = append(users, UserInfo{
-			ID:     c.id,
-			IP:     c.ip,
-			Name:   c.name,
-			Avatar: c.avatar,
-			Status: c.status,
-			Video:  c.hasVideo,
+			ID:         c.id,
+			IP:         c.ip,
+			Name:       c.name,
+			Avatar:     c.avatar,
+			Status:     c.status,
+			Video:      c.hasVideo,
+			IsAdmin:    isAdminIP(c.ip),
+			MediaMuted: c.mediaMutedUntil > time.Now().UnixMilli(),
+			TextMuted:  c.mutedUntil > time.Now().UnixMilli(),
 		})
 	}
 	roomsMutex.Unlock()
@@ -280,6 +299,18 @@ func updateClientAvatar(roomID, clientID, avatar string) bool {
 
 	client.avatar = avatar
 	return true
+}
+
+func isClientMuted(roomID, clientID string) (bool, int64) {
+	roomsMutex.Lock()
+	defer roomsMutex.Unlock()
+	if rooms[roomID] != nil && rooms[roomID][clientID] != nil {
+		mutedUntil := rooms[roomID][clientID].mutedUntil
+		if time.Now().UnixMilli() < mutedUntil {
+			return true, mutedUntil
+		}
+	}
+	return false, 0
 }
 
 func forwardControlSignal(roomID, senderID, messageType string) {
@@ -524,6 +555,10 @@ func handleControlConnections(w http.ResponseWriter, r *http.Request) {
 		case "webrtc_offer", "webrtc_answer", "webrtc_candidate":
 			forwardWebRTCSignal(roomID, client.id, p)
 		case "chat":
+			if client.mutedUntil > time.Now().UnixMilli() {
+				_ = writeMessage(client, ws, websocket.TextMessage, []byte(fmt.Sprintf(`{"type":"error","message":"您已被禁言至 %s"}`, time.UnixMilli(client.mutedUntil).Format("15:04:05"))))
+				continue
+			}
 			var chatMsgData struct {
 				Content string `json:"content"`
 			}
@@ -545,6 +580,98 @@ func handleControlConnections(w http.ResponseWriter, r *http.Request) {
 				}
 				saveChatMessage(msg)
 				broadcastChatMessage(roomID, msg)
+			}
+		case "admin_action":
+			if !isAdminIP(client.ip) {
+				_ = writeMessage(client, ws, websocket.TextMessage, []byte(`{"type":"error","message":"无权限"}`))
+				continue
+			}
+			var adminData struct {
+				Action   string `json:"action"`
+				TargetID string `json:"targetID"`
+				Duration int64  `json:"duration"` // 禁言时长(毫秒)
+				NewName  string `json:"newName"`
+			}
+			if err := json.Unmarshal(p, &adminData); err != nil {
+				continue
+			}
+
+			roomsMutex.Lock()
+			targetClient := rooms[roomID][adminData.TargetID]
+			roomsMutex.Unlock()
+
+			if targetClient == nil {
+				continue
+			}
+
+			if adminData.Action == "kick" {
+				if targetClient.controlConn != nil {
+					_ = writeMessage(targetClient, targetClient.controlConn, websocket.TextMessage, []byte(`{"type":"kicked","message":"您已被管理员踢出频道"}`))
+					targetClient.controlConn.Close()
+				}
+			} else if adminData.Action == "mute" {
+				roomsMutex.Lock()
+				targetClient.mutedUntil = time.Now().UnixMilli() + adminData.Duration
+				roomsMutex.Unlock()
+				if targetClient.controlConn != nil {
+					_ = writeMessage(targetClient, targetClient.controlConn, websocket.TextMessage, []byte(fmt.Sprintf(`{"type":"muted","message":"您已被管理员禁言"}`)))
+				}
+				broadcastRoomInfo(roomID)
+				// 广播系统消息
+				durationSec := adminData.Duration / 1000
+				sysMsg := ChatMessage{
+					ID:         fmt.Sprintf("%d", time.Now().UnixNano()),
+					RoomID:     roomID,
+					Type:       "system",
+					Content:    fmt.Sprintf("%s 被管理员禁言 %d 秒", targetClient.name, durationSec),
+					Timestamp:  time.Now().UnixMilli(),
+				}
+				saveChatMessage(sysMsg)
+				broadcastChatMessage(roomID, sysMsg)
+			} else if adminData.Action == "mute_media" {
+				roomsMutex.Lock()
+				targetClient.mediaMutedUntil = time.Now().UnixMilli() + adminData.Duration
+				roomsMutex.Unlock()
+				if targetClient.controlConn != nil {
+					_ = writeMessage(targetClient, targetClient.controlConn, websocket.TextMessage, []byte(fmt.Sprintf(`{"type":"media_muted","message":"您的语音/视频已被管理员禁用"}`)))
+				}
+				broadcastRoomInfo(roomID)
+				
+				// 广播系统消息
+				durationSec := adminData.Duration / 1000
+				sysMsg := ChatMessage{
+					ID:         fmt.Sprintf("%d", time.Now().UnixNano()),
+					RoomID:     roomID,
+					Type:       "system",
+					Content:    fmt.Sprintf("%s 被管理员禁音(语音/视频) %d 秒", targetClient.name, durationSec),
+					Timestamp:  time.Now().UnixMilli(),
+				}
+				saveChatMessage(sysMsg)
+				broadcastChatMessage(roomID, sysMsg)
+			} else if adminData.Action == "unmute_all" {
+				roomsMutex.Lock()
+				targetClient.mutedUntil = 0
+				targetClient.mediaMutedUntil = 0
+				roomsMutex.Unlock()
+				if targetClient.controlConn != nil {
+					_ = writeMessage(targetClient, targetClient.controlConn, websocket.TextMessage, []byte(`{"type":"unmuted","message":"您的禁言禁音已被解除"}`))
+				}
+				broadcastRoomInfo(roomID)
+
+				// 广播系统消息
+				sysMsg := ChatMessage{
+					ID:         fmt.Sprintf("%d", time.Now().UnixNano()),
+					RoomID:     roomID,
+					Type:       "system",
+					Content:    fmt.Sprintf("%s 的禁言/禁音已被解除", targetClient.name),
+					Timestamp:  time.Now().UnixMilli(),
+				}
+				saveChatMessage(sysMsg)
+				broadcastChatMessage(roomID, sysMsg)
+			} else if adminData.Action == "change_name" {
+				if updateClientName(roomID, adminData.TargetID, adminData.NewName) {
+					broadcastRoomInfo(roomID)
+				}
 			}
 		}
 	}

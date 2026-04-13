@@ -29,15 +29,20 @@
                 class="ip-user-wrapper"
               >
                 <div
-                  class="ip-item"
-                  :class="{
-                    'ip-item-self': user.id === clientId,
-                    'ip-item-editable': user.id === clientId
-                  }"
-                  :tabindex="user.id === clientId ? 0 : -1"
-                  @click="user.id === clientId && $emit('editDisplayName')"
-                  @keydown.enter="user.id === clientId && $emit('editDisplayName')"
-                >
+              class="ip-item"
+              :class="{
+                'ip-item-self': user.id === clientId,
+                'ip-item-editable': user.id === clientId
+              }"
+              :tabindex="user.id === clientId ? 0 : -1"
+              @click="user.id === clientId && $emit('editDisplayName')"
+              @keydown.enter="user.id === clientId && $emit('editDisplayName')"
+              @contextmenu.prevent="$emit('openUserMenu', $event, user)"
+              @touchstart="$emit('startUserLongPress', $event, user)"
+              @touchend="$emit('cancelUserLongPress')"
+              @touchmove="$emit('cancelUserLongPress')"
+              @touchcancel="$emit('cancelUserLongPress')"
+            >
                   <span class="ip-item-address">
                     <img v-if="user.avatar" :src="user.avatar" class="user-avatar-small" alt="" />
                     <span class="voice-indicator" v-show="userVolumes[user.id] > 0.05">
@@ -69,6 +74,7 @@
           :class="{ 'video-active': isVideoOn }"
           :aria-label="isVideoOn ? '关闭摄像头' : '打开摄像头'"
           v-if="audioConfig.protocol === 'webrtc'"
+          :disabled="isLocalMediaMuted"
         >
           <span class="material-symbols-outlined">
             {{ isVideoOn ? 'videocam' : 'videocam_off' }}
@@ -133,6 +139,11 @@
             :tabindex="user.id === clientId ? 0 : -1"
             @click="user.id === clientId && $emit('editDisplayName')"
             @keydown.enter="user.id === clientId && $emit('editDisplayName')"
+            @contextmenu.prevent="$emit('openUserMenu', $event, user)"
+            @touchstart="$emit('startUserLongPress', $event, user)"
+            @touchend="$emit('cancelUserLongPress')"
+            @touchmove="$emit('cancelUserLongPress')"
+            @touchcancel="$emit('cancelUserLongPress')"
           >
             <span class="ip-item-address">
               <img v-if="user.avatar" :src="user.avatar" class="user-avatar-small" alt="" />
@@ -166,6 +177,7 @@
             :class="{ 'video-active': isVideoOn }"
             :aria-label="isVideoOn ? '关闭摄像头' : '打开摄像头'"
             v-if="audioConfig.protocol === 'webrtc'"
+            :disabled="isLocalMediaMuted"
           >
             <span class="material-symbols-outlined">
               {{ isVideoOn ? 'videocam' : 'videocam_off' }}
@@ -245,6 +257,7 @@ defineProps<{
   isRequestingTalk: boolean
   requestTalkBtnText: string
   userVolumes: Record<string, number>
+  isLocalMediaMuted: boolean
 }>()
 
 defineEmits<{
@@ -255,6 +268,9 @@ defineEmits<{
   (e: 'toggleMute'): void
   (e: 'toggleCall'): void
   (e: 'requestTalk'): void
+  (e: 'openUserMenu', event: MouseEvent | TouchEvent, user: RoomUser): void
+  (e: 'startUserLongPress', event: TouchEvent, user: RoomUser): void
+  (e: 'cancelUserLongPress'): void
 }>()
 </script>
 

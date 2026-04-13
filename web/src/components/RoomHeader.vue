@@ -17,7 +17,7 @@
 
   <!-- 设置弹窗 -->
   <md-dialog :open="showSettings" @close="showSettings = false">
-    <div slot="headline">频道设置</div>
+    <div slot="headline">设置</div>
     <div slot="content" class="settings-content">
       <!-- 麦克风选择 -->
       <div class="setting-item" v-if="audioDevices.length > 0">
@@ -181,6 +181,7 @@ defineProps<{
   qqNumber: string
   theme: string
   colorTheme: string
+  isLocalMediaMuted?: boolean
 }>()
 defineEmits<{
   (e: 'toggleLogs'): void

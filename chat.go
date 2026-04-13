@@ -137,10 +137,12 @@ func saveUploadedFile(file io.Reader, filename string) (string, error) {
 
 func getMessageUploadFilenames(msg ChatMessage) []string {
 	filenames := make([]string, 0, 1+len(msg.Images))
-	if msg.Content != "" {
-		filename := filepath.Base(msg.Content)
-		if filename != "." && filename != "/" && filename != "" {
-			filenames = append(filenames, filename)
+	if msg.Type == "file" || msg.Type == "image" {
+		if msg.Content != "" {
+			filename := filepath.Base(msg.Content)
+			if filename != "." && filename != "/" && filename != "" {
+				filenames = append(filenames, filename)
+			}
 		}
 	}
 	for _, image := range msg.Images {
@@ -205,7 +207,7 @@ func isFileReferenced(filename string) bool {
 	return false
 }
 
-func revokeChatMessage(roomID, clientID, messageID string) (ChatMessage, error) {
+func revokeChatMessage(roomID, clientID, clientIP, messageID string) (ChatMessage, error) {
 	chatMutex.Lock()
 	defer chatMutex.Unlock()
 
@@ -222,13 +224,13 @@ func revokeChatMessage(roomID, clientID, messageID string) (ChatMessage, error) 
 		if messages[i].ID != messageID {
 			continue
 		}
-		if messages[i].SenderID != clientID {
+		if messages[i].SenderID != clientID && !isAdminIP(clientIP) {
 			return ChatMessage{}, fmt.Errorf("只能撤回自己的消息")
 		}
 		if messages[i].Revoked {
 			return ChatMessage{}, fmt.Errorf("消息已经撤回")
 		}
-		if time.Since(time.UnixMilli(messages[i].Timestamp)) > 2*time.Minute {
+		if time.Since(time.UnixMilli(messages[i].Timestamp)) > 2*time.Minute && !isAdminIP(clientIP) {
 			return ChatMessage{}, fmt.Errorf("消息已超过两分钟，无法撤回")
 		}
 
@@ -290,7 +292,8 @@ func handleChatRevokeAPI(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	message, err := revokeChatMessage(request.RoomID, request.ClientID, request.MessageID)
+	clientIP := getClientIP(r)
+	message, err := revokeChatMessage(request.RoomID, request.ClientID, clientIP, request.MessageID)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
@@ -352,6 +355,11 @@ func handleFileUploadAPI(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	senderIP, senderName, senderAvatar := getSenderInfo(roomID, senderID)
+
+	if muted, mutedUntil := isClientMuted(roomID, senderID); muted {
+		http.Error(w, fmt.Sprintf("您已被禁言至 %s", time.UnixMilli(mutedUntil).Format("15:04:05")), http.StatusForbidden)
+		return
+	}
 
 	// 创建聊天消息记录
 	msg := ChatMessage{
@@ -443,6 +451,11 @@ func handleBatchImageUploadAPI(w http.ResponseWriter, r *http.Request) {
 	}
 
 	senderIP, senderName, senderAvatar := getSenderInfo(roomID, senderID)
+
+	if muted, mutedUntil := isClientMuted(roomID, senderID); muted {
+		http.Error(w, fmt.Sprintf("您已被禁言至 %s", time.UnixMilli(mutedUntil).Format("15:04:05")), http.StatusForbidden)
+		return
+	}
 
 	msg := ChatMessage{
 		ID:         fmt.Sprintf("%d", time.Now().UnixNano()),

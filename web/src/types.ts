@@ -5,6 +5,9 @@ export type RoomUser = {
   avatar?: string
   status: string
   video?: boolean
+  isAdmin?: boolean
+  mediaMuted?: boolean
+  textMuted?: boolean
 }
 
 export type ChatMessage = {

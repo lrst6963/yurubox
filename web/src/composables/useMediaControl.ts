@@ -67,6 +67,8 @@ export function useMediaControl(
   const isCallBtnDisabled = computed(() => {
     if (userCount.value < 2) return true
     if (!mediaChannelReady.value) return true
+    const localUser = getCurrentRoomUsers().find(u => u.id === getClientId())
+    if (localUser?.mediaMuted) return true
     return false
   })
 

@@ -5,6 +5,7 @@ export function useChat(
   getCurrentRoomId: () => string,
   getClientId: () => string,
   getControlWs: () => WebSocket | null,
+  getIsAdmin: () => boolean,
   logMsg: (msg: string) => void
 ) {
   const chatMessages = ref<ChatMessage[]>([])
@@ -261,8 +262,9 @@ export function useChat(
   }
 
   const canRevokeMessage = (message: ChatMessage) => {
-    if (message.senderId !== getClientId() || message.revoked) return false
-    return Date.now() - message.timestamp <= 2 * 60 * 1000
+    const isAdmin = getIsAdmin();
+    if ((message.senderId !== getClientId() && !isAdmin) || message.revoked) return false
+    return isAdmin || (Date.now() - message.timestamp <= 2 * 60 * 1000)
   }
 
   const canCopyMessage = (message: ChatMessage) => !message.revoked

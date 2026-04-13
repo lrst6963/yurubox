@@ -1,65 +1,72 @@
 <template>
   <div class="chat-container">
     <div class="chat-messages" ref="chatMessagesContainerRef">
-      <div
+      <template
         v-for="msg in chatMessages"
         :key="msg.id"
-        class="chat-message"
-        :class="{
-          'chat-message-self': msg.senderId === clientId,
-          'chat-message-image-only': isImageLikeMessage(msg) && !msg.revoked
-        }"
-        @contextmenu.prevent="openMessageMenu($event, msg)"
-        @touchstart="startMessageLongPress($event, msg)"
-        @touchend="cancelMessageLongPress"
-        @touchmove="cancelMessageLongPress"
-        @touchcancel="cancelMessageLongPress"
       >
-        <div class="chat-message-header">
-          <img v-if="msg.senderAvatar" :src="msg.senderAvatar" class="user-avatar-small" alt="" />
-          <span class="chat-sender">{{ getSenderDisplayName(msg) }}</span>
-          <span class="chat-time">{{ new Date(msg.timestamp).toLocaleTimeString() }}</span>
-        </div>
-        <div
-          v-if="msg.revoked"
-          class="chat-message-revoked"
-        >
-          {{ msg.senderId === clientId ? '你撤回了一条消息' : '对方撤回了一条消息' }}
+        <div v-if="msg.type === 'system'" class="chat-message-system">
+          <span>{{ msg.content }}</span>
         </div>
         <div
           v-else
-          class="chat-message-content"
-          :class="{ 'chat-message-content-image': isImageLikeMessage(msg) }"
+          class="chat-message"
+          :class="{
+            'chat-message-self': msg.senderId === clientId,
+            'chat-message-image-only': isImageLikeMessage(msg) && !msg.revoked
+          }"
+          @contextmenu.prevent="openMessageMenu($event, msg)"
+          @touchstart="startMessageLongPress($event, msg)"
+          @touchend="cancelMessageLongPress"
+          @touchmove="cancelMessageLongPress"
+          @touchcancel="cancelMessageLongPress"
         >
-          <template v-if="msg.type === 'text'">
-            {{ msg.content }}
-          </template>
-          <template v-else-if="msg.type === 'image'">
-            <a :href="msg.content" target="_blank">
-              <img :src="msg.content" class="chat-image" />
-            </a>
-          </template>
-          <template v-else-if="msg.type === 'file'">
-            <a :href="msg.content" target="_blank" class="chat-file">
-              <span class="material-symbols-outlined">description</span>
-              {{ msg.fileName }} ({{ formatFileSize(msg.fileSize) }})
-            </a>
-          </template>
-          <template v-else-if="msg.type === 'image_group'">
-            <div class="chat-image-grid" :class="getImageGridClass(msg.images?.length || 0)">
-              <a
-                v-for="(image, index) in msg.images"
-                :key="`${msg.id}_${index}`"
-                :href="image.url"
-                target="_blank"
-                class="chat-image-grid-item"
-              >
-                <img :src="image.url" class="chat-image-grid-image" />
+          <div class="chat-message-header">
+            <img v-if="msg.senderAvatar" :src="msg.senderAvatar" class="user-avatar-small" alt="" />
+            <span class="chat-sender">{{ getSenderDisplayName(msg) }}</span>
+            <span class="chat-time">{{ new Date(msg.timestamp).toLocaleTimeString() }}</span>
+          </div>
+          <div
+            v-if="msg.revoked"
+            class="chat-message-revoked"
+          >
+            {{ msg.senderId === clientId ? '你撤回了一条消息' : '对方撤回了一条消息' }}
+          </div>
+          <div
+            v-else
+            class="chat-message-content"
+            :class="{ 'chat-message-content-image': isImageLikeMessage(msg) }"
+          >
+            <template v-if="msg.type === 'text'">
+              {{ msg.content }}
+            </template>
+            <template v-else-if="msg.type === 'image'">
+              <a :href="msg.content" target="_blank">
+                <img :src="msg.content" class="chat-image" />
               </a>
-            </div>
-          </template>
+            </template>
+            <template v-else-if="msg.type === 'file'">
+              <a :href="msg.content" target="_blank" class="chat-file">
+                <span class="material-symbols-outlined">description</span>
+                {{ msg.fileName }} ({{ formatFileSize(msg.fileSize) }})
+              </a>
+            </template>
+            <template v-else-if="msg.type === 'image_group'">
+              <div class="chat-image-grid" :class="getImageGridClass(msg.images?.length || 0)">
+                <a
+                  v-for="(image, index) in msg.images"
+                  :key="`${msg.id}_${index}`"
+                  :href="image.url"
+                  target="_blank"
+                  class="chat-image-grid-item"
+                >
+                  <img :src="image.url" class="chat-image-grid-image" />
+                </a>
+              </div>
+            </template>
+          </div>
         </div>
-      </div>
+      </template>
     </div>
     <div v-if="pendingImages.length > 0" class="chat-pending-images">
       <div v-for="item in pendingImages" :key="item.id" class="chat-pending-image-item">
@@ -67,26 +74,27 @@
         <button class="chat-pending-remove" @click="removePendingImage(item.id)" type="button">×</button>
       </div>
     </div>
-    <div class="chat-input-area">
-      <md-icon-button @click="fileInputRef?.click()" aria-label="发送附件">
+    <div class="chat-input-area" :class="{ 'chat-input-disabled': isLocalTextMuted }">
+      <md-icon-button @click="fileInputRef?.click()" aria-label="发送附件" :disabled="isLocalTextMuted">
         <span class="material-symbols-outlined">attach_file</span>
       </md-icon-button>
-      <md-icon-button @click="imageInputRef?.click()" aria-label="发送图片">
+      <md-icon-button @click="imageInputRef?.click()" aria-label="发送图片" :disabled="isLocalTextMuted">
         <span class="material-symbols-outlined">image</span>
       </md-icon-button>
-      <input type="file" ref="fileInputRef" style="display: none" @change="uploadFile($event, 'file')" />
-      <input type="file" ref="imageInputRef" style="display: none" accept="image/*" multiple @change="selectImages($event)" />
+      <input type="file" ref="fileInputRef" style="display: none" @change="uploadFile($event, 'file')" :disabled="isLocalTextMuted" />
+      <input type="file" ref="imageInputRef" style="display: none" accept="image/*" multiple @change="selectImages($event)" :disabled="isLocalTextMuted" />
       
       <md-outlined-text-field
         class="chat-input-field"
-        placeholder="输入消息(上限1000字)..."
+        :placeholder="isLocalTextMuted ? '您已被禁言' : '输入消息(上限1000字)...'"
         :value="chatInput"
         @input="$emit('update:chatInput', ($event.target as HTMLInputElement).value)"
         @keyup.enter="sendTextMessage"
         @paste="handlePaste"
         maxlength="1000"
+        :disabled="isLocalTextMuted"
       ></md-outlined-text-field>
-      <md-icon-button @click="sendTextMessage" aria-label="发送" :disabled="!chatInput.trim() && pendingImages.length === 0">
+      <md-icon-button @click="sendTextMessage" aria-label="发送" :disabled="isLocalTextMuted || (!chatInput.trim() && pendingImages.length === 0)">
         <span class="material-symbols-outlined">send</span>
       </md-icon-button>
     </div>
@@ -125,6 +133,7 @@ const props = defineProps<{
   clientId: string
   chatMessages: ChatMessage[]
   chatInput: string
+  isLocalTextMuted: boolean
   pendingImages: PendingImage[]
   messageMenu: MessageMenuState
 
@@ -171,3 +180,41 @@ defineExpose({
 })
 
 </script>
+
+<style scoped>
+.chat-message-system {
+  display: flex;
+  justify-content: center;
+  margin: 12px 0;
+}
+.chat-message-system span {
+  background-color: var(--md-sys-color-surface-variant);
+  color: var(--md-sys-color-on-surface-variant);
+  padding: 4px 12px;
+  border-radius: 12px;
+  font-size: 12px;
+  text-align: center;
+}
+.chat-input-disabled {
+  opacity: 0.6;
+  pointer-events: none;
+}
+
+.chat-menu-mask {
+  position: fixed;
+  inset: 0;
+  z-index: 300;
+}
+
+.chat-message-menu {
+  position: fixed;
+  width: 180px;
+  padding: 6px 0;
+  border-radius: 14px;
+  background: var(--md-sys-color-surface);
+  box-shadow: var(--md-elevation-2);
+  border: 1px solid var(--md-sys-color-outline-variant);
+  max-height: 90vh;
+  overflow-y: auto;
+}
+</style>

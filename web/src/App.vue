@@ -57,6 +57,7 @@
           :isRequestTalkBtnDisabled="isRequestTalkBtnDisabled"
           :isRequestingTalk="isRequestingTalk"
           :requestTalkBtnText="requestTalkBtnText"
+          :isLocalMediaMuted="isLocalMediaMuted"
           @editDisplayName="editDisplayName"
           @update:selectedVideoDeviceId="selectedVideoDeviceId = $event"
           :userVolumes="userVolumes"
@@ -65,7 +66,24 @@
           @toggleMute="toggleMute"
           @toggleCall="toggleCall"
           @requestTalk="requestTalk"
+          @openUserMenu="openUserMenu"
+          @startUserLongPress="startUserLongPress"
+          @cancelUserLongPress="cancelUserLongPress"
         />
+
+        <!-- 用户管理菜单 -->
+        <div v-if="userMenu.visible" class="chat-menu-mask" @click="closeUserMenu">
+          <div class="chat-message-menu" :style="{ left: `${userMenu.x}px`, top: `${userMenu.y}px` }" @click.stop>
+            <button class="chat-menu-item" type="button" @click="kickUser(userMenu.user)">踢出</button>
+            <button class="chat-menu-item" type="button" @click="muteUser(userMenu.user, 10000)">禁言10秒</button>
+            <button class="chat-menu-item" type="button" @click="muteUser(userMenu.user, 30000)">禁言30秒</button>
+            <button class="chat-menu-item" type="button" @click="muteUser(userMenu.user, 60000)">禁言1分钟</button>
+            <button class="chat-menu-item" type="button" @click="customMuteUser(userMenu.user)">自定义禁言</button>
+            <button class="chat-menu-item" type="button" @click="customMuteMediaUser(userMenu.user)">自定义禁音(语音/视频)</button>
+            <button class="chat-menu-item" type="button" @click="unmuteAllUser(userMenu.user)">解除禁言禁音</button>
+            <button class="chat-menu-item" type="button" @click="changeUserName(userMenu.user)">修改名称</button>
+          </div>
+        </div>
 
         <div class="room-chat">
           <RoomVideoGrid
@@ -73,12 +91,14 @@
             :usersWithVideo="usersWithVideo"
             :formatRoomUserLabel="formatRoomUserLabel"
             :userVolumes="userVolumes"
+            :clientId="clientId"
           />
           
           <RoomChat
             :clientId="clientId"
             :chatMessages="chatMessages"
             :chatInput="chatInput"
+            :isLocalTextMuted="isLocalTextMuted"
             @update:chatInput="chatInput = $event"
             :pendingImages="pendingImages"
             :messageMenu="messageMenu"
@@ -138,6 +158,131 @@ const roomKey = ref('')
 const isInRoom = ref(false)
 const isConnecting = ref(false)
 
+// --- 用户管理菜单 ---
+const userMenu = ref({
+  visible: false,
+  x: 0,
+  y: 0,
+  user: null as RoomUser | null
+})
+let userLongPressTimer: number | null = null
+
+const openUserMenu = (event: MouseEvent | TouchEvent, user: RoomUser) => {
+  const currentUser = currentRoomUsers.value.find(u => u.id === clientId)
+  if (!currentUser || !currentUser.isAdmin) return
+  if (user.id === clientId) return
+
+  event.preventDefault()
+  
+  let x = 0
+  let y = 0
+  if (event instanceof MouseEvent) {
+    x = event.clientX
+    y = event.clientY
+  } else if (window.TouchEvent && event instanceof TouchEvent) {
+    x = event.touches[0].clientX
+    y = event.touches[0].clientY
+  }
+  
+  // 确保菜单不会超出屏幕边界
+  const menuWidth = 180 // 菜单宽度，与 CSS 中对应
+  const menuHeight = 360 // 预估菜单高度 (增加高度以适应更多选项)
+  const padding = 10 // 屏幕边缘留白
+  
+  if (x + menuWidth + padding > window.innerWidth) {
+    x = window.innerWidth - menuWidth - padding
+  }
+  if (y + menuHeight + padding > window.innerHeight) {
+    y = window.innerHeight - menuHeight - padding
+    // 如果修正后 y 仍然小于 padding，说明屏幕太矮，强制固定在顶部
+    if (y < padding) {
+      y = padding
+    }
+  }
+  
+  userMenu.value = {
+    visible: true,
+    x,
+    y,
+    user
+  }
+}
+
+const closeUserMenu = () => {
+  userMenu.value.visible = false
+}
+
+const startUserLongPress = (event: TouchEvent, user: RoomUser) => {
+  const currentUser = currentRoomUsers.value.find(u => u.id === clientId)
+  if (!currentUser || !currentUser.isAdmin) return
+  if (user.id === clientId) return
+
+  if (userLongPressTimer) clearTimeout(userLongPressTimer)
+  userLongPressTimer = window.setTimeout(() => {
+    openUserMenu(event, user)
+  }, 500)
+}
+
+const cancelUserLongPress = () => {
+  if (userLongPressTimer) {
+    clearTimeout(userLongPressTimer)
+    userLongPressTimer = null
+  }
+}
+
+const kickUser = (user: RoomUser | null) => {
+  if (!user || !controlWs || !isSocketOpen(controlWs)) return
+  controlWs.send(JSON.stringify({ type: 'admin_action', action: 'kick', targetID: user.id }))
+  closeUserMenu()
+}
+
+const muteUser = (user: RoomUser | null, duration: number) => {
+  if (!user || !controlWs || !isSocketOpen(controlWs)) return
+  controlWs.send(JSON.stringify({ type: 'admin_action', action: 'mute', targetID: user.id, duration }))
+  closeUserMenu()
+}
+
+const customMuteUser = (user: RoomUser | null) => {
+  if (!user) return
+  const input = prompt('请输入禁言时长(秒):', '60')
+  if (input !== null) {
+    const duration = parseInt(input, 10)
+    if (!isNaN(duration) && duration > 0) {
+      muteUser(user, duration * 1000)
+    }
+  }
+  closeUserMenu()
+}
+
+const customMuteMediaUser = (user: RoomUser | null) => {
+  if (!user) return
+  const input = prompt('请输入禁音时长(秒):', '60')
+  if (input !== null) {
+    const duration = parseInt(input, 10)
+    if (!isNaN(duration) && duration > 0) {
+      if (controlWs && isSocketOpen(controlWs)) {
+        controlWs.send(JSON.stringify({ type: 'admin_action', action: 'mute_media', targetID: user.id, duration: duration * 1000 }))
+      }
+    }
+  }
+  closeUserMenu()
+}
+
+const unmuteAllUser = (user: RoomUser | null) => {
+  if (!user || !controlWs || !isSocketOpen(controlWs)) return
+  controlWs.send(JSON.stringify({ type: 'admin_action', action: 'unmute_all', targetID: user.id }))
+  closeUserMenu()
+}
+
+const changeUserName = (user: RoomUser | null) => {
+  if (!user || !controlWs || !isSocketOpen(controlWs)) return
+  const newName = prompt(`请输入 ${user.name || user.ip} 的新名称:`, user.name || '')
+  if (newName !== null && newName.trim() !== '') {
+    controlWs.send(JSON.stringify({ type: 'admin_action', action: 'change_name', targetID: user.id, newName: newName.trim() }))
+  }
+  closeUserMenu()
+}
+
 const { logs, showLogs, toggleLogs, logMsg, clearLogs } = useLogs()
 
 // 房间状态
@@ -182,6 +327,16 @@ const displayName = ref(normalizeDisplayName(localStorage.getItem('phonecall_dis
 const qqNumber = ref(localStorage.getItem('phonecall_qqNumber') || '')
 
 const getAvatarUrl = (qq: string) => qq.trim() ? `http://q2.qlogo.cn/headimg_dl?dst_uin=${qq.trim()}&spec=5` : ''
+
+const isLocalMediaMuted = computed(() => {
+  const user = currentRoomUsers.value.find(u => u.id === clientId)
+  return !!user?.mediaMuted
+})
+
+const isLocalTextMuted = computed(() => {
+  const user = currentRoomUsers.value.find(u => u.id === clientId)
+  return !!user?.textMuted
+})
 
 const {
   usersWithVideo,
@@ -266,6 +421,10 @@ const {
   () => currentRoomId,
   () => clientId,
   () => controlWs,
+  () => {
+    const user = currentRoomUsers.value.find(u => u.id === clientId)
+    return user ? (user.isAdmin === true) : false
+  },
   logMsg
 )
 
@@ -402,8 +561,18 @@ const connectControlChannel = (roomId: string) => {
       if (data.type === 'room_info') {
         updateRoomInfo(data)
       } else if (data.type === 'error') {
-        alert('服务器错误: ' + data.message)
+        alert('系统提示: ' + data.message)
+      } else if (data.type === 'kicked') {
+        alert(data.message)
         leaveRoom()
+      } else if (data.type === 'muted') {
+        // 无需 alert
+      } else if (data.type === 'media_muted') {
+        // 无需 alert
+        if (isCalling.value) toggleCall()
+        if (isVideoOn.value) toggleVideo()
+      } else if (data.type === 'unmuted') {
+        // 无需 alert
       } else if (data.type === 'request_talk') {
         if (isCalling.value) {
           if (confirm(`[${data.fromIP}] 正在申请讲话，是否同意让出麦克风？`)) {

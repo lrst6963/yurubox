@@ -1,4 +1,4 @@
-:root {
+:root, :root.light {
   /* Material Design 3 Monet 默认翡翠绿 (Emerald) */
   --theme-primary-light: #006b5f;
   --theme-on-primary-light: #ffffff;
@@ -58,7 +58,7 @@
 }
 
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not(.light) {
     --md-sys-color-primary: var(--theme-primary-dark);
     --md-sys-color-on-primary: var(--theme-on-primary-dark);
     --md-sys-color-primary-container: var(--theme-primary-container-dark);
@@ -97,6 +97,46 @@
     --md-list-item-label-text-color: var(--md-sys-color-on-surface);
     --md-dialog-container-color: var(--md-sys-color-surface-container-high);
   }
+}
+
+:root.dark {
+  --md-sys-color-primary: var(--theme-primary-dark);
+  --md-sys-color-on-primary: var(--theme-on-primary-dark);
+  --md-sys-color-primary-container: var(--theme-primary-container-dark);
+  --md-sys-color-on-primary-container: var(--theme-on-primary-container-dark);
+  
+  --md-sys-color-secondary: var(--theme-secondary-dark);
+  --md-sys-color-on-secondary: var(--theme-on-secondary-dark);
+  --md-sys-color-secondary-container: var(--theme-secondary-container-dark);
+  --md-sys-color-on-secondary-container: var(--theme-on-secondary-container-dark);
+  
+  --md-sys-color-background: #1a1c1e;
+  --md-sys-color-on-background: #e2e2e6;
+  --md-sys-color-surface: #1a1c1e;
+  --md-sys-color-on-surface: #e2e2e6;
+  --md-sys-color-surface-variant: #43474e;
+  --md-sys-color-on-surface-variant: #c3c7cf;
+  
+  --md-sys-color-outline: #8d9199;
+  --md-sys-color-outline-variant: #43474e;
+  
+  --md-elevation-1: 0px 1px 2px 0px rgba(0,0,0,0.5), 0px 1px 3px 1px rgba(0,0,0,0.3);
+  --md-elevation-2: 0px 1px 2px 0px rgba(0,0,0,0.5), 0px 2px 6px 2px rgba(0,0,0,0.3);
+
+  /* Material Web Components 深色变量映射 */
+  --md-sys-color-on-surface-rgb: 226, 226, 230;
+  --md-sys-color-surface-container-highest: #333538;
+  --md-sys-color-surface-container: #1e1f22;
+  --md-sys-color-surface-container-high: #282a2d;
+  --md-sys-color-surface-container-low: #1a1c1e;
+  --md-sys-color-surface-container-lowest: #0f1013;
+  --md-filled-select-text-field-container-color: var(--md-sys-color-surface-container-highest);
+  --md-outlined-text-field-container-color: transparent;
+  --md-filled-select-text-field-input-text-color: var(--md-sys-color-on-surface);
+  --md-outlined-text-field-input-text-color: var(--md-sys-color-on-surface);
+  --md-list-container-color: var(--md-sys-color-surface-container);
+  --md-list-item-label-text-color: var(--md-sys-color-on-surface);
+  --md-dialog-container-color: var(--md-sys-color-surface-container-high);
 }
 
 html, body {

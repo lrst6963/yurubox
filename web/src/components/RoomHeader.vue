@@ -1,7 +1,7 @@
 <template>
   <div class="header-flex">
-    <h1>Web 通话</h1>
-    <div style="display: flex; align-items: center; gap: 12px;">
+    <h1 class="room-title">Web 通话</h1>
+    <div style="display: flex; align-items: center; gap: 12px; margin-left: auto;">
       <span class="badge">{{ userCount }} 人在线</span>
       <md-icon-button @click="showSettings = true" aria-label="设置" :class="{ 'active': showSettings }">
         <span class="material-symbols-outlined">settings</span>
@@ -63,6 +63,21 @@
         ></md-outlined-text-field>
       </div>
 
+      <!-- 主题设置 -->
+      <div class="setting-item" style="margin-top: 8px;">
+        <md-filled-select label="主题模式" :value="theme" @change="$emit('update:theme', ($event.target as HTMLSelectElement).value)">
+          <md-select-option value="system">
+            <div slot="headline">跟随系统</div>
+          </md-select-option>
+          <md-select-option value="light">
+            <div slot="headline">浅色模式</div>
+          </md-select-option>
+          <md-select-option value="dark">
+            <div slot="headline">深色模式</div>
+          </md-select-option>
+        </md-filled-select>
+      </div>
+
       <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; margin-top: 8px; gap: 24px;">
         <span>麦克风降噪</span>
         <md-switch
@@ -81,6 +96,12 @@
 </template>
 
 <style scoped>
+@media (max-width: 600px) {
+  .room-title {
+    display: none;
+  }
+}
+
 .settings-content {
   display: flex;
   flex-direction: column;
@@ -128,12 +149,14 @@ defineProps<{
   localVolume: number
   remoteVolume: number
   qqNumber: string
+  theme: string
 }>()
 defineEmits<{
   (e: 'toggleLogs'): void
   (e: 'leaveRoom'): void
   (e: 'updateNoiseSuppression', value: boolean): void
   (e: 'update:qqNumber', value: string): void
+  (e: 'update:theme', value: string): void
   (e: 'update:selectedVideoDeviceId', value: string): void
   (e: 'update:selectedAudioDeviceId', value: string): void
   (e: 'update:selectedAudioOutputDeviceId', value: string): void

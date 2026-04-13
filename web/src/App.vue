@@ -22,6 +22,8 @@
         :localVolume="localVolume"
         :remoteVolume="remoteVolume"
         :qqNumber="qqNumber"
+        :theme="theme"
+        @update:theme="theme = $event"
         @update:qqNumber="updateQQNumber"
         @update:selectedVideoDeviceId="selectedVideoDeviceId = $event"
         @update:selectedAudioDeviceId="selectedAudioDeviceId = $event"
@@ -111,7 +113,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onBeforeUnmount, computed } from 'vue'
+import { ref, onMounted, onBeforeUnmount, computed, watch } from 'vue'
 import { getKey, hashPassword } from './utils/crypto'
 import { createClientId, isSocketOpen, buildWebSocketUrl } from './utils/helpers'
 import { AudioEngine } from './core/audio'
@@ -139,6 +141,21 @@ const { logs, showLogs, toggleLogs, logMsg, clearLogs } = useLogs()
 // 房间状态
 const currentRoomUsers = ref<RoomUser[]>([])
 const userCount = computed(() => currentRoomUsers.value.length)
+
+// 主题设置
+const theme = ref(localStorage.getItem('phonecall_theme') || 'system')
+watch(theme, (newTheme) => {
+  localStorage.setItem('phonecall_theme', newTheme)
+  if (newTheme === 'dark') {
+    document.documentElement.classList.add('dark')
+    document.documentElement.classList.remove('light')
+  } else if (newTheme === 'light') {
+    document.documentElement.classList.add('light')
+    document.documentElement.classList.remove('dark')
+  } else {
+    document.documentElement.classList.remove('dark', 'light')
+  }
+}, { immediate: true })
 
 // --- 核心变量 ---
 let cryptoKey: CryptoKey | null = null

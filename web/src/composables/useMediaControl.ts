@@ -125,6 +125,7 @@ export function useMediaControl(
       })
       if (switchedVideo && isVideoOn.value) {
         logMsg('检测到摄像头列表变化，已自动选择可用设备')
+        changeVideoDevice()
       }
 
       audioDevices.value = devices.filter(d => d.kind === 'audioinput')

@@ -97,7 +97,9 @@ export const initPeerConnection = (
   }
 
   pc.ontrack = event => {
-    onTrack(targetId, event.streams[0])
+    // WebRTC ontrack 触发时流可能还不包含对应的轨道，确保直接传入对应的 track
+    const stream = event.streams && event.streams[0] ? event.streams[0] : new MediaStream([event.track])
+    onTrack(targetId, stream)
   }
 
   pc.oniceconnectionstatechange = () => {
@@ -107,7 +109,25 @@ export const initPeerConnection = (
   }
 
   if (mediaStream) {
-    mediaStream.getTracks().forEach(track => pc.addTrack(track, mediaStream!))
+    // 根据已有轨道创建对应类型的 transceiver
+    const hasAudio = mediaStream.getAudioTracks().length > 0
+    const hasVideo = mediaStream.getVideoTracks().length > 0
+
+    if (hasAudio) {
+      pc.addTransceiver(mediaStream.getAudioTracks()[0], { direction: 'sendrecv', streams: [mediaStream] })
+    } else {
+      pc.addTransceiver('audio', { direction: 'recvonly', streams: [] })
+    }
+
+    if (hasVideo) {
+      pc.addTransceiver(mediaStream.getVideoTracks()[0], { direction: 'sendrecv', streams: [mediaStream] })
+    } else {
+      pc.addTransceiver('video', { direction: 'recvonly', streams: [] })
+    }
+  } else {
+    // 初始化时就添加接收音频和视频的 transceiver，防止单向通信没有通道
+    pc.addTransceiver('audio', { direction: 'recvonly', streams: [] })
+    pc.addTransceiver('video', { direction: 'recvonly', streams: [] })
   }
 
   return pc

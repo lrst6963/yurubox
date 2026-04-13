@@ -208,7 +208,35 @@ export class AudioEngine {
       (constraints.audio as any).sampleRate = config.sampleRate
     }
 
-    this.mediaStream = await navigator.mediaDevices.getUserMedia(constraints)
+    let existingVideoTrack: MediaStreamTrack | null = null
+    if (this.mediaStream) {
+      existingVideoTrack = this.mediaStream.getVideoTracks()[0] || null
+      // 只停止音频轨道，保留视频轨道不受影响
+      this.mediaStream.getAudioTracks().forEach(track => {
+        track.stop()
+        this.mediaStream?.removeTrack(track)
+      })
+    }
+
+    // 已有视频轨道时不请求新视频；config.video 为 false 也不请求，但不停止已有视频
+    if (existingVideoTrack || !config.video) {
+      constraints.video = false
+    }
+
+    if (!this.mediaStream) {
+      this.mediaStream = new MediaStream()
+    }
+
+    if (constraints.audio || constraints.video) {
+      const newStream = await navigator.mediaDevices.getUserMedia(constraints)
+      newStream.getTracks().forEach(track => {
+        this.mediaStream!.addTrack(track)
+      })
+    }
+
+    if (existingVideoTrack && config.video && !this.mediaStream.getVideoTracks().includes(existingVideoTrack)) {
+      this.mediaStream.addTrack(existingVideoTrack)
+    }
 
     if (config.audio !== false) {
       const audioTrack = this.mediaStream.getAudioTracks()[0]
@@ -237,34 +265,36 @@ export class AudioEngine {
       return this.mediaStream
     }
 
-    this.audioInput = this.context.createMediaStreamSource(this.mediaStream)
-    const outputNode = this.ensureOutputGainReady()
-    
-    if (!this.captureMonitorGainNode) {
-      this.captureMonitorGainNode = this.context.createGain()
-      this.captureMonitorGainNode.gain.value = 0
-      this.captureMonitorGainNode.connect(outputNode || this.context.destination)
+    if (config.audio !== false) {
+      this.audioInput = this.context.createMediaStreamSource(this.mediaStream)
+      const outputNode = this.ensureOutputGainReady()
+      
+      if (!this.captureMonitorGainNode) {
+        this.captureMonitorGainNode = this.context.createGain()
+        this.captureMonitorGainNode.gain.value = 0
+        this.captureMonitorGainNode.connect(outputNode || this.context.destination)
+      }
+
+      this.captureWorkletNode = new AudioWorkletNode(this.context, 'capture-audio-processor', {
+        numberOfInputs: 1,
+        numberOfOutputs: 1,
+        channelCount: 1,
+        outputChannelCount: [1]
+      })
+
+      this.captureWorkletNode.port.onmessage = (event: MessageEvent<CaptureWorkletMessage>) => {
+        if (event.data?.type !== 'capture') return
+        onCapture(event.data.samples)
+      }
+
+      this.audioInput.connect(this.captureWorkletNode)
+      this.captureWorkletNode.connect(this.captureMonitorGainNode)
     }
-
-    this.captureWorkletNode = new AudioWorkletNode(this.context, 'capture-audio-processor', {
-      numberOfInputs: 1,
-      numberOfOutputs: 1,
-      channelCount: 1,
-      outputChannelCount: [1]
-    })
-
-    this.captureWorkletNode.port.onmessage = (event: MessageEvent<CaptureWorkletMessage>) => {
-      if (event.data?.type !== 'capture') return
-      onCapture(event.data.samples)
-    }
-
-    this.audioInput.connect(this.captureWorkletNode)
-    this.captureWorkletNode.connect(this.captureMonitorGainNode)
 
     return this.mediaStream
   }
 
-  stopCapture() {
+  stopAudioOnly() {
     if (this.audioInput) {
       this.audioInput.disconnect()
       this.audioInput = null
@@ -275,7 +305,15 @@ export class AudioEngine {
       this.captureWorkletNode = null
     }
     if (this.mediaStream) {
-      this.mediaStream.getTracks().forEach(track => track.stop())
+      this.mediaStream.getAudioTracks().forEach(track => track.stop())
+      this.mediaStream.getAudioTracks().forEach(track => this.mediaStream?.removeTrack(track))
+    }
+  }
+
+  stopCapture() {
+    this.stopAudioOnly()
+    if (this.mediaStream) {
+      this.mediaStream.getVideoTracks().forEach(track => track.stop())
       this.mediaStream = null
     }
   }

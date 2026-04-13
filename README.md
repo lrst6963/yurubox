@@ -2,7 +2,8 @@
 
 一个简约的Web实时聊天与音视频通话室。
 
-<img width="2560" height="1291" alt="image" src="https://github.com/user-attachments/assets/228414f6-f2c2-4525-be9c-39aa2c479a8d" />
+<img width="2560" height="1287" alt="image" src="https://github.com/user-attachments/assets/7a1e672b-1ff2-4c23-b3a9-812b38ae2d7c" />
+
 
 ## ✨ 功能特性
 

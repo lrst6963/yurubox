@@ -12,7 +12,7 @@ export default defineConfig({
     })
   ],
   build: {
-    outDir: '../public',
+    outDir: '../server/public',
     emptyOutDir: false // 避免删除 public 中原本的文件
   }
 })

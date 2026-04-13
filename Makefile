@@ -11,12 +11,12 @@ web:
 
 build: web
 	@echo "构建$(APP_NAME)..."
-	CGO_ENABLED=0 go build -ldflags "-w -s" -o $(APP_NAME) .
+	cd server && CGO_ENABLED=0 go build -ldflags "-w -s" -o ../$(APP_NAME) .
 	@echo "构建完成. 可以运行: ./$(APP_NAME)"
 
 clean:
 	@echo "清理..."
 	rm -f $(APP_NAME)
 	#rm -f cert.pem key.pem
-	rm -rf public/
+	rm -rf server/public/
 	@echo "清理完成."

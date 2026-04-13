@@ -45,12 +45,16 @@
   --md-sys-color-on-surface-rgb: 26, 28, 30;
   --md-sys-color-surface-container-highest: #e3e2e6;
   --md-sys-color-surface-container: #f1f0f4;
+  --md-sys-color-surface-container-high: #ebe9ed;
+  --md-sys-color-surface-container-low: #f7f6f9;
+  --md-sys-color-surface-container-lowest: #ffffff;
   --md-filled-select-text-field-container-color: var(--md-sys-color-surface-container-highest);
   --md-outlined-text-field-container-color: transparent;
   --md-filled-select-text-field-input-text-color: var(--md-sys-color-on-surface);
   --md-outlined-text-field-input-text-color: var(--md-sys-color-on-surface);
   --md-list-container-color: var(--md-sys-color-surface-container);
   --md-list-item-label-text-color: var(--md-sys-color-on-surface);
+  --md-dialog-container-color: var(--md-sys-color-surface-container-high);
 }
 
 @media (prefers-color-scheme: dark) {
@@ -82,12 +86,16 @@
     --md-sys-color-on-surface-rgb: 226, 226, 230;
     --md-sys-color-surface-container-highest: #333538;
     --md-sys-color-surface-container: #1e1f22;
+    --md-sys-color-surface-container-high: #282a2d;
+    --md-sys-color-surface-container-low: #1a1c1e;
+    --md-sys-color-surface-container-lowest: #0f1013;
     --md-filled-select-text-field-container-color: var(--md-sys-color-surface-container-highest);
     --md-outlined-text-field-container-color: transparent;
     --md-filled-select-text-field-input-text-color: var(--md-sys-color-on-surface);
     --md-outlined-text-field-input-text-color: var(--md-sys-color-on-surface);
     --md-list-container-color: var(--md-sys-color-surface-container);
     --md-list-item-label-text-color: var(--md-sys-color-on-surface);
+    --md-dialog-container-color: var(--md-sys-color-surface-container-high);
   }
 }
 
@@ -452,4 +460,34 @@ md-outlined-text-field {
 .log-entry {
   margin-bottom: 4px;
   color: var(--md-sys-color-on-surface-variant);
+}
+
+/* Material Design 风格滚动条 */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--md-sys-color-outline-variant) transparent;
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background-color: var(--md-sys-color-outline-variant);
+  border-radius: 4px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background-color: var(--md-sys-color-outline);
+}
+
+::-webkit-scrollbar-corner {
+  background: transparent;
 }

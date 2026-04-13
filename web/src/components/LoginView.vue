@@ -5,6 +5,8 @@
       <md-outlined-text-field
         label="输入频道密码"
         type="password"
+        minlength="8"
+        maxlength="20"
         :value="roomKey"
         @input="$emit('update:roomKey', ($event.target as HTMLInputElement).value)"
         @keyup.enter="$emit('join')"

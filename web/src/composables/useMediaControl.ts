@@ -15,7 +15,15 @@ export function useMediaControl(
 ) {
   const audioEngine = new AudioEngine(logMsg)
   
-  let audioConfig: AudioRuntimeConfig = { mode: 'normal', quality: 'lossless', sampleRate: 48000, bufferSize: 4096, protocol: 'ws' }
+  const savedNoiseSuppression = localStorage.getItem('phonecall_noiseSuppression')
+  let audioConfig: AudioRuntimeConfig = {
+    mode: 'normal',
+    quality: 'lossless',
+    sampleRate: 48000,
+    bufferSize: 4096,
+    protocol: 'ws',
+    noiseSuppression: savedNoiseSuppression ? savedNoiseSuppression === 'true' : false
+  }
   let peerConnections: Record<string, RTCPeerConnection> = {}
   let audioUnlockBound = false
 
@@ -26,10 +34,16 @@ export function useMediaControl(
   const isMuted = ref(false)
   const isVideoOn = ref(false)
   const videoDevices = ref<MediaDeviceInfo[]>([])
-  const selectedVideoDeviceId = ref('')
+  const audioDevices = ref<MediaDeviceInfo[]>([])
+  const audioOutputDevices = ref<MediaDeviceInfo[]>([])
+  const selectedVideoDeviceId = ref(localStorage.getItem('phonecall_videoDeviceId') || '')
+  const selectedAudioDeviceId = ref(localStorage.getItem('phonecall_audioDeviceId') || '')
+  const selectedAudioOutputDeviceId = ref(localStorage.getItem('phonecall_audioOutputDeviceId') || '')
   const mediaChannelReady = ref(false)
   const isRequestingTalk = ref(false)
   const userVolumes = ref<Record<string, number>>({})
+  const localVolume = ref(0)
+  const remoteVolume = ref(0)
   let volumeAnimationFrameId: number | null = null
 
   const userCount = computed(() => getCurrentRoomUsers().length)
@@ -83,29 +97,55 @@ export function useMediaControl(
     return name.includes('notfound') || message.includes('requested device not found')
   }
 
-  const normalizeSelectedVideoDevice = () => {
-    if (videoDevices.value.length === 0) {
-      selectedVideoDeviceId.value = ''
+  const normalizeSelectedDevice = (
+    devices: MediaDeviceInfo[],
+    selectedId: string,
+    onSwitch: (newId: string) => void
+  ) => {
+    if (devices.length === 0) {
+      onSwitch('')
       return false
     }
-    const exists = videoDevices.value.some(device => device.deviceId === selectedVideoDeviceId.value)
-    if (!selectedVideoDeviceId.value || !exists) {
-      selectedVideoDeviceId.value = videoDevices.value[0].deviceId
+    const exists = devices.some(device => device.deviceId === selectedId)
+    if (!selectedId || !exists) {
+      onSwitch(devices[0].deviceId)
       return true
     }
     return false
   }
 
-  const loadVideoDevices = async () => {
+  const loadMediaDevices = async () => {
     try {
       const devices = await navigator.mediaDevices.enumerateDevices()
+      
       videoDevices.value = devices.filter(d => d.kind === 'videoinput')
-      const switched = normalizeSelectedVideoDevice()
-      if (switched && isVideoOn.value) {
+      const switchedVideo = normalizeSelectedDevice(videoDevices.value, selectedVideoDeviceId.value, id => {
+        selectedVideoDeviceId.value = id
+        localStorage.setItem('phonecall_videoDeviceId', id)
+      })
+      if (switchedVideo && isVideoOn.value) {
         logMsg('检测到摄像头列表变化，已自动选择可用设备')
       }
+
+      audioDevices.value = devices.filter(d => d.kind === 'audioinput')
+      const switchedAudio = normalizeSelectedDevice(audioDevices.value, selectedAudioDeviceId.value, id => {
+        selectedAudioDeviceId.value = id
+        localStorage.setItem('phonecall_audioDeviceId', id)
+      })
+      if (switchedAudio && isCalling.value) {
+        logMsg('检测到麦克风列表变化，已自动选择可用设备')
+      }
+
+      audioOutputDevices.value = devices.filter(d => d.kind === 'audiooutput')
+      const switchedAudioOutput = normalizeSelectedDevice(audioOutputDevices.value, selectedAudioOutputDeviceId.value, id => {
+        selectedAudioOutputDeviceId.value = id
+        localStorage.setItem('phonecall_audioOutputDeviceId', id)
+      })
+      if (switchedAudioOutput) {
+        audioEngine.setOutputDevice(selectedAudioOutputDeviceId.value)
+      }
     } catch (e) {
-      console.warn('获取摄像头列表失败', e)
+      console.warn('获取设备列表失败', e)
     }
   }
 
@@ -285,8 +325,11 @@ export function useMediaControl(
       if (!audioConfig.video || !isMissingVideoDeviceError(error)) {
         throw error
       }
-      await loadVideoDevices()
-      const switched = normalizeSelectedVideoDevice()
+      await loadMediaDevices()
+      const switched = normalizeSelectedDevice(videoDevices.value, selectedVideoDeviceId.value, id => {
+        selectedVideoDeviceId.value = id
+        localStorage.setItem('phonecall_videoDeviceId', id)
+      })
       if (!switched) {
         throw error
       }
@@ -525,7 +568,7 @@ export function useMediaControl(
         await startVideoTrackWithFallback()
         reportVideoState(true)
         logMsg('已打开摄像头')
-        await loadVideoDevices()
+        await loadMediaDevices()
       } catch (e: any) {
         isVideoOn.value = false
         audioConfig.video = false
@@ -563,6 +606,29 @@ export function useMediaControl(
       } catch (e: any) {
         console.error(e)
       }
+    }
+  }
+
+  const changeAudioDevice = async () => {
+    audioConfig.audioDeviceId = selectedAudioDeviceId.value || undefined
+    if (isCalling.value) {
+      try {
+        await toggleCall(false)
+        await toggleCall(true)
+        logMsg('已切换麦克风')
+      } catch (e: any) {
+        console.error(e)
+      }
+    }
+  }
+
+  const changeAudioOutputDevice = async () => {
+    audioConfig.audioOutputDeviceId = selectedAudioOutputDeviceId.value || undefined
+    try {
+      await audioEngine.setOutputDevice(selectedAudioOutputDeviceId.value)
+      logMsg('已切换扬声器')
+    } catch (e: any) {
+      console.error(e)
     }
   }
 
@@ -665,10 +731,13 @@ export function useMediaControl(
     
     if (isCalling.value) {
       volumes[clientId] = audioEngine.getVolume(audioEngine.localAnalyser)
+      localVolume.value = volumes[clientId]
     } else {
       volumes[clientId] = 0
+      localVolume.value = 0
     }
 
+    let currentRemoteVolume = 0
     getCurrentRoomUsers().forEach(user => {
       if (user.id === clientId) return
       
@@ -676,12 +745,14 @@ export function useMediaControl(
         const analyser = audioEngine.analysers[user.id]
         if (analyser) {
           volumes[user.id] = audioEngine.getVolume(analyser)
+          currentRemoteVolume = Math.max(currentRemoteVolume, volumes[user.id])
         } else {
           volumes[user.id] = 0
         }
       } else {
         if (user.status === '对讲中') {
           volumes[user.id] = audioEngine.getVolume(audioEngine.remoteMixAnalyser)
+          currentRemoteVolume = Math.max(currentRemoteVolume, volumes[user.id])
         } else {
           volumes[user.id] = 0
         }
@@ -689,6 +760,7 @@ export function useMediaControl(
     })
     
     userVolumes.value = volumes
+    remoteVolume.value = currentRemoteVolume
     volumeAnimationFrameId = requestAnimationFrame(updateVolumes)
   }
 
@@ -703,10 +775,16 @@ export function useMediaControl(
     isMuted,
     isVideoOn,
     videoDevices,
+    audioDevices,
+    audioOutputDevices,
     selectedVideoDeviceId,
+    selectedAudioDeviceId,
+    selectedAudioOutputDeviceId,
     mediaChannelReady,
     isRequestingTalk,
     userVolumes,
+    localVolume,
+    remoteVolume,
     showCallBtn,
     showRequestTalkBtn,
     isCallBtnDisabled,
@@ -717,11 +795,13 @@ export function useMediaControl(
     setAudioConfig,
     getAudioConfig,
     bindAudioUnlockEvents,
-    loadVideoDevices,
+    loadMediaDevices,
     getPeerConnection,
     toggleCall,
     toggleVideo,
     changeVideoDevice,
+    changeAudioDevice,
+    changeAudioOutputDevice,
     toggleMute,
     requestTalk,
     syncUsersWithVideoFromRoomInfo,

@@ -7,6 +7,9 @@ export type AudioRuntimeConfig = {
   audio?: boolean
   video?: boolean
   videoDeviceId?: string
+  audioDeviceId?: string
+  audioOutputDeviceId?: string
+  noiseSuppression?: boolean
 }
 
 export type CaptureWorkletMessage = {
@@ -136,6 +139,21 @@ export class AudioEngine {
     }
   }
 
+  async setOutputDevice(deviceId: string) {
+    try {
+      if (this.context && typeof (this.context as any).setSinkId === 'function') {
+        await (this.context as any).setSinkId(deviceId || '')
+      }
+      for (const el of Object.values(this.remoteAudioElements)) {
+        if (typeof (el as any).setSinkId === 'function') {
+          await (el as any).setSinkId(deviceId || '')
+        }
+      }
+    } catch (e) {
+      console.warn('Failed to set output device:', e)
+    }
+  }
+
   async syncAllRemoteAudioPlayback(onBlocked?: () => void) {
     await Promise.allSettled(
       Object.values(this.remoteAudioElements).map(audioEl => this.syncRemoteAudioElement(audioEl, onBlocked))
@@ -249,8 +267,9 @@ export class AudioEngine {
     const constraints: MediaStreamConstraints = {
       audio: config.audio === false ? false : {
         echoCancellation: !isLossless,
-        noiseSuppression: !isLossless,
-        autoGainControl: false
+        noiseSuppression: config.noiseSuppression ?? false,
+        autoGainControl: false,
+        ...(config.audioDeviceId ? { deviceId: { exact: config.audioDeviceId } } : {})
       },
       video: videoConstraints
     }

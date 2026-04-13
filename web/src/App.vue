@@ -12,6 +12,22 @@
       <RoomHeader
         :userCount="userCount"
         :showLogs="showLogs"
+        :noiseSuppression="audioConfig.noiseSuppression ?? false"
+        :videoDevices="videoDevices"
+        :audioDevices="audioDevices"
+        :audioOutputDevices="audioOutputDevices"
+        :selectedVideoDeviceId="selectedVideoDeviceId"
+        :selectedAudioDeviceId="selectedAudioDeviceId"
+        :selectedAudioOutputDeviceId="selectedAudioOutputDeviceId"
+        :localVolume="localVolume"
+        :remoteVolume="remoteVolume"
+        @update:selectedVideoDeviceId="selectedVideoDeviceId = $event"
+        @update:selectedAudioDeviceId="selectedAudioDeviceId = $event"
+        @update:selectedAudioOutputDeviceId="selectedAudioOutputDeviceId = $event"
+        @changeVideoDevice="changeVideoDevice"
+        @changeAudioDevice="changeAudioDevice"
+        @changeAudioOutputDevice="changeAudioOutputDevice"
+        @updateNoiseSuppression="toggleNoiseSuppression"
         @toggleLogs="toggleLogs"
         @leaveRoom="leaveRoom"
       />
@@ -138,7 +154,11 @@ const {
   isMuted,
   isVideoOn,
   videoDevices,
+  audioDevices,
+  audioOutputDevices,
   selectedVideoDeviceId,
+  selectedAudioDeviceId,
+  selectedAudioOutputDeviceId,
   mediaChannelReady,
   isRequestingTalk,
   showCallBtn,
@@ -148,16 +168,20 @@ const {
   isRequestTalkBtnDisabled,
   requestTalkBtnText,
   userVolumes,
+  localVolume,
+  remoteVolume,
   
   audioEngine,
   setAudioConfig,
   getAudioConfig,
   bindAudioUnlockEvents,
-  loadVideoDevices,
+  loadMediaDevices,
   getPeerConnection,
   toggleCall,
   toggleVideo,
   changeVideoDevice,
+  changeAudioDevice,
+  changeAudioOutputDevice,
   toggleMute,
   requestTalk,
   syncUsersWithVideoFromRoomInfo,
@@ -216,6 +240,17 @@ function normalizeDisplayName(name: string) {
   return normalized || '未命名'
 }
 
+const toggleNoiseSuppression = async (value: boolean) => {
+  setAudioConfig({ noiseSuppression: value })
+  localStorage.setItem('phonecall_noiseSuppression', value.toString())
+  
+  if (isCalling.value) {
+    // 重新开启麦克风以应用新的设置
+    await toggleCall(false)
+    await toggleCall(true)
+  }
+}
+
 const formatRoomUserLabel = (user: RoomUser) => `${normalizeDisplayName(user.name || '')}(${user.ip})`
 
 const editDisplayName = () => {
@@ -244,8 +279,14 @@ const getStatusColorClass = (status: string) => {
 }
 
 const joinRoom = async () => {
-  if (!roomKey.value.trim()) {
+  const password = roomKey.value.trim()
+  if (!password) {
     alert('请输入频道密码')
+    return
+  }
+
+  if (password.length < 8 || password.length > 20) {
+    alert('密码长度必须在8到20个字符之间')
     return
   }
 
@@ -421,8 +462,8 @@ const leaveRoom = () => {
 onMounted(async () => {
   bindAudioUnlockEvents()
   if (navigator.mediaDevices) {
-    navigator.mediaDevices.addEventListener('devicechange', loadVideoDevices)
-    loadVideoDevices()
+    navigator.mediaDevices.addEventListener('devicechange', loadMediaDevices)
+    loadMediaDevices()
   }
   try {
     const response = await fetch('/api/audio-config')
@@ -445,7 +486,7 @@ onMounted(async () => {
 
 onBeforeUnmount(() => {
   if (navigator.mediaDevices) {
-    navigator.mediaDevices.removeEventListener('devicechange', loadVideoDevices)
+    navigator.mediaDevices.removeEventListener('devicechange', loadMediaDevices)
   }
   cancelMessageLongPress()
   clearPendingImages()

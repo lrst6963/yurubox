@@ -42,7 +42,7 @@ func generateCertIfNotExist(certFile, keyFile string) error {
 	template := x509.Certificate{
 		SerialNumber: serialNumber,
 		Subject: pkix.Name{
-			Organization: []string{"WebRTC PhoneCall Temp Cert"},
+			Organization: []string{"WebRTC yurubox Temp Cert"},
 		},
 		NotBefore: notBefore,
 		NotAfter:  notAfter,

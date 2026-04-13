@@ -1,6 +1,6 @@
 <template>
   <div class="header-flex">
-    <h1 class="room-title">Web 通话</h1>
+    <h1 class="room-title">Yurubox</h1>
     <div style="display: flex; align-items: center; gap: 12px; margin-left: auto;">
       <span class="badge">{{ userCount }} 人在线</span>
       <md-icon-button @click="showSettings = true" aria-label="设置" :class="{ 'active': showSettings }">

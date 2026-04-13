@@ -15,7 +15,7 @@ export function useMediaControl(
 ) {
   const audioEngine = new AudioEngine(logMsg)
   
-  const savedNoiseSuppression = localStorage.getItem('phonecall_noiseSuppression')
+  const savedNoiseSuppression = localStorage.getItem('yurubox_noiseSuppression')
   let audioConfig: AudioRuntimeConfig = {
     mode: 'normal',
     quality: 'lossless',
@@ -36,9 +36,9 @@ export function useMediaControl(
   const videoDevices = ref<MediaDeviceInfo[]>([])
   const audioDevices = ref<MediaDeviceInfo[]>([])
   const audioOutputDevices = ref<MediaDeviceInfo[]>([])
-  const selectedVideoDeviceId = ref(localStorage.getItem('phonecall_videoDeviceId') || '')
-  const selectedAudioDeviceId = ref(localStorage.getItem('phonecall_audioDeviceId') || '')
-  const selectedAudioOutputDeviceId = ref(localStorage.getItem('phonecall_audioOutputDeviceId') || '')
+  const selectedVideoDeviceId = ref(localStorage.getItem('yurubox_videoDeviceId') || '')
+  const selectedAudioDeviceId = ref(localStorage.getItem('yurubox_audioDeviceId') || '')
+  const selectedAudioOutputDeviceId = ref(localStorage.getItem('yurubox_audioOutputDeviceId') || '')
   const mediaChannelReady = ref(false)
   const isRequestingTalk = ref(false)
   const userVolumes = ref<Record<string, number>>({})
@@ -123,7 +123,7 @@ export function useMediaControl(
       videoDevices.value = devices.filter(d => d.kind === 'videoinput')
       const switchedVideo = normalizeSelectedDevice(videoDevices.value, selectedVideoDeviceId.value, id => {
         selectedVideoDeviceId.value = id
-        localStorage.setItem('phonecall_videoDeviceId', id)
+        localStorage.setItem('yurubox_videoDeviceId', id)
       })
       if (switchedVideo && isVideoOn.value) {
         logMsg('检测到摄像头列表变化，已自动选择可用设备')
@@ -133,7 +133,7 @@ export function useMediaControl(
       audioDevices.value = devices.filter(d => d.kind === 'audioinput')
       const switchedAudio = normalizeSelectedDevice(audioDevices.value, selectedAudioDeviceId.value, id => {
         selectedAudioDeviceId.value = id
-        localStorage.setItem('phonecall_audioDeviceId', id)
+        localStorage.setItem('yurubox_audioDeviceId', id)
       })
       if (switchedAudio && isCalling.value) {
         logMsg('检测到麦克风列表变化，已自动选择可用设备')
@@ -142,7 +142,7 @@ export function useMediaControl(
       audioOutputDevices.value = devices.filter(d => d.kind === 'audiooutput')
       const switchedAudioOutput = normalizeSelectedDevice(audioOutputDevices.value, selectedAudioOutputDeviceId.value, id => {
         selectedAudioOutputDeviceId.value = id
-        localStorage.setItem('phonecall_audioOutputDeviceId', id)
+        localStorage.setItem('yurubox_audioOutputDeviceId', id)
       })
       if (switchedAudioOutput) {
         audioEngine.setOutputDevice(selectedAudioOutputDeviceId.value)
@@ -331,7 +331,7 @@ export function useMediaControl(
       await loadMediaDevices()
       const switched = normalizeSelectedDevice(videoDevices.value, selectedVideoDeviceId.value, id => {
         selectedVideoDeviceId.value = id
-        localStorage.setItem('phonecall_videoDeviceId', id)
+        localStorage.setItem('yurubox_videoDeviceId', id)
       })
       if (!switched) {
         throw error

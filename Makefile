@@ -1,6 +1,6 @@
 .PHONY: build clean web
 
-APP_NAME = phonecall
+APP_NAME = yurubox
 
 all: build
 

@@ -1,4 +1,4 @@
-module phonecall
+module yurubox
 
 go 1.25
 

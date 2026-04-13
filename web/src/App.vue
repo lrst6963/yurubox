@@ -290,9 +290,9 @@ const currentRoomUsers = ref<RoomUser[]>([])
 const userCount = computed(() => currentRoomUsers.value.length)
 
 // 主题设置
-const theme = ref(localStorage.getItem('phonecall_theme') || 'system')
+const theme = ref(localStorage.getItem('yurubox_theme') || 'system')
 watch(theme, (newTheme) => {
-  localStorage.setItem('phonecall_theme', newTheme)
+  localStorage.setItem('yurubox_theme', newTheme)
   if (newTheme === 'dark') {
     document.documentElement.classList.add('dark')
     document.documentElement.classList.remove('light')
@@ -305,9 +305,9 @@ watch(theme, (newTheme) => {
 }, { immediate: true })
 
 // 颜色主题设置
-const colorTheme = ref(localStorage.getItem('phonecall_colorTheme') || 'default')
+const colorTheme = ref(localStorage.getItem('yurubox_colorTheme') || 'default')
 watch(colorTheme, (newColor, oldColor) => {
-  localStorage.setItem('phonecall_colorTheme', newColor)
+  localStorage.setItem('yurubox_colorTheme', newColor)
   if (oldColor && oldColor !== 'default') {
     document.documentElement.classList.remove(`color-${oldColor}`)
   }
@@ -323,8 +323,8 @@ let mediaWs: WebSocket | null = null
 let clientId = ''
 let currentRoomId = ''
 let isCleaningUp = false
-const displayName = ref(normalizeDisplayName(localStorage.getItem('phonecall_displayName') || ''))
-const qqNumber = ref(localStorage.getItem('phonecall_qqNumber') || '')
+const displayName = ref(normalizeDisplayName(localStorage.getItem('yurubox_displayName') || ''))
+const qqNumber = ref(localStorage.getItem('yurubox_qqNumber') || '')
 
 const getAvatarUrl = (qq: string) => qq.trim() ? `http://q2.qlogo.cn/headimg_dl?dst_uin=${qq.trim()}&spec=5` : ''
 
@@ -437,7 +437,7 @@ function normalizeDisplayName(name: string) {
 
 const toggleNoiseSuppression = async (value: boolean) => {
   setAudioConfig({ noiseSuppression: value })
-  localStorage.setItem('phonecall_noiseSuppression', value.toString())
+  localStorage.setItem('yurubox_noiseSuppression', value.toString())
   
   if (isCalling.value) {
     // 重新开启麦克风以应用新的设置
@@ -456,7 +456,7 @@ const editDisplayName = () => {
   if (normalizedName === displayName.value) return
 
   displayName.value = normalizedName
-  localStorage.setItem('phonecall_displayName', normalizedName)
+  localStorage.setItem('yurubox_displayName', normalizedName)
 
   if (isSocketOpen(controlWs)) {
     controlWs!.send(JSON.stringify({
@@ -469,7 +469,7 @@ const editDisplayName = () => {
 const updateQQNumber = (qq: string) => {
   const normalizedQQ = qq.trim()
   qqNumber.value = normalizedQQ
-  localStorage.setItem('phonecall_qqNumber', normalizedQQ)
+  localStorage.setItem('yurubox_qqNumber', normalizedQQ)
 
   if (isSocketOpen(controlWs)) {
     controlWs!.send(JSON.stringify({
@@ -514,10 +514,10 @@ const joinRoom = async () => {
 
   const roomId = await hashPassword(roomKey.value)
   currentRoomId = roomId
-  let storedClientId = localStorage.getItem('phonecall_clientId')
+  let storedClientId = localStorage.getItem('yurubox_clientId')
   if (!storedClientId) {
     storedClientId = createClientId()
-    localStorage.setItem('phonecall_clientId', storedClientId)
+    localStorage.setItem('yurubox_clientId', storedClientId)
   }
   clientId = storedClientId
   currentRoomUsers.value = []

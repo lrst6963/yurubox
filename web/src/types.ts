@@ -6,6 +6,7 @@ export type RoomUser = {
   status: string
   video?: boolean
   isAdmin?: boolean
+  isSuperAdmin?: boolean
   mediaMuted?: boolean
   textMuted?: boolean
 }

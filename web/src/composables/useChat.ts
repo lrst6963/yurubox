@@ -1,11 +1,12 @@
 import { ref } from 'vue'
-import type { ChatMessage, PendingImage, MessageMenuState } from '../types'
+import type { ChatMessage, PendingImage, MessageMenuState, RoomUser } from '../types'
 
 export function useChat(
   getCurrentRoomId: () => string,
   getClientId: () => string,
   getControlWs: () => WebSocket | null,
-  getIsAdmin: () => boolean,
+  getCurrentUser: () => RoomUser | undefined,
+  getUserById: (id: string) => RoomUser | undefined,
   logMsg: (msg: string) => void
 ) {
   const chatMessages = ref<ChatMessage[]>([])
@@ -262,9 +263,24 @@ export function useChat(
   }
 
   const canRevokeMessage = (message: ChatMessage) => {
-    const isAdmin = getIsAdmin();
-    if ((message.senderId !== getClientId() && !isAdmin) || message.revoked) return false
-    return isAdmin || (Date.now() - message.timestamp <= 2 * 60 * 1000)
+    if (message.revoked) return false
+    const isSelf = message.senderId === getClientId()
+    if (isSelf) return Date.now() - message.timestamp <= 2 * 60 * 1000
+    
+    const currentUser = getCurrentUser()
+    const isAdmin = currentUser?.isAdmin || currentUser?.isSuperAdmin
+    const isSuperAdmin = currentUser?.isSuperAdmin
+    
+    if (isAdmin) {
+      const senderUser = getUserById(message.senderId)
+      // 如果不是超级管理员，且消息发送者是超级管理员，则不能撤回
+      if (!isSuperAdmin && senderUser?.isSuperAdmin) {
+        return false
+      }
+      return true
+    }
+    
+    return false
   }
 
   const canCopyMessage = (message: ChatMessage) => !message.revoked

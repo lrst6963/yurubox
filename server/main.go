@@ -31,6 +31,7 @@ type Client struct {
 	avatar          string
 	status          string
 	hasVideo        bool
+	isAdmin         bool
 	mutedUntil      int64
 	mediaMutedUntil int64
 	controlConn     *websocket.Conn
@@ -48,15 +49,16 @@ var (
 
 // UserInfo 表示房间内的单个用户信息
 type UserInfo struct {
-	ID         string `json:"id"`
-	IP         string `json:"ip"`
-	Name       string `json:"name"`
-	Avatar     string `json:"avatar"`
-	Status     string `json:"status"`
-	Video      bool   `json:"video"`
-	IsAdmin    bool   `json:"isAdmin"`
-	MediaMuted bool   `json:"mediaMuted"`
-	TextMuted  bool   `json:"textMuted"`
+	ID           string `json:"id"`
+	IP           string `json:"ip"`
+	Name         string `json:"name"`
+	Avatar       string `json:"avatar"`
+	Status       string `json:"status"`
+	Video        bool   `json:"video"`
+	IsAdmin      bool   `json:"isAdmin"`
+	IsSuperAdmin bool   `json:"isSuperAdmin"`
+	MediaMuted   bool   `json:"mediaMuted"`
+	TextMuted    bool   `json:"textMuted"`
 }
 
 func isAdminIP(ipStr string) bool {
@@ -93,15 +95,16 @@ func broadcastRoomInfo(roomID string) {
 		}
 		recipients = append(recipients, c)
 		users = append(users, UserInfo{
-			ID:         c.id,
-			IP:         c.ip,
-			Name:       c.name,
-			Avatar:     c.avatar,
-			Status:     c.status,
-			Video:      c.hasVideo,
-			IsAdmin:    isAdminIP(c.ip),
-			MediaMuted: c.mediaMutedUntil > time.Now().UnixMilli(),
-			TextMuted:  c.mutedUntil > time.Now().UnixMilli(),
+			ID:           c.id,
+			IP:           c.ip,
+			Name:         c.name,
+			Avatar:       c.avatar,
+			Status:       c.status,
+			Video:        c.hasVideo,
+			IsAdmin:      c.isAdmin || isAdminIP(c.ip),
+			IsSuperAdmin: isAdminIP(c.ip),
+			MediaMuted:   c.mediaMutedUntil > time.Now().UnixMilli(),
+			TextMuted:    c.mutedUntil > time.Now().UnixMilli(),
 		})
 	}
 	roomsMutex.Unlock()
@@ -582,7 +585,11 @@ func handleControlConnections(w http.ResponseWriter, r *http.Request) {
 				broadcastChatMessage(roomID, msg)
 			}
 		case "admin_action":
-			if !isAdminIP(client.ip) {
+			isSuper := isAdminIP(client.ip)
+			roomsMutex.Lock()
+			isNormalAdmin := client.isAdmin || isSuper
+			roomsMutex.Unlock()
+			if !isNormalAdmin {
 				_ = writeMessage(client, ws, websocket.TextMessage, []byte(`{"type":"error","message":"无权限"}`))
 				continue
 			}
@@ -596,11 +603,76 @@ func handleControlConnections(w http.ResponseWriter, r *http.Request) {
 				continue
 			}
 
+			if adminData.Action == "transfer_admin" {
+				if isSuper {
+					_ = writeMessage(client, ws, websocket.TextMessage, []byte(`{"type":"error","message":"超级管理员无法通过此方式禅让"}`))
+					continue
+				}
+				roomsMutex.Lock()
+				targetClient := rooms[roomID][adminData.TargetID]
+				if targetClient != nil {
+					client.isAdmin = false
+					targetClient.isAdmin = true
+				}
+				roomsMutex.Unlock()
+				broadcastRoomInfo(roomID)
+
+				if targetClient != nil {
+					sysMsg := ChatMessage{
+						ID:         fmt.Sprintf("%d", time.Now().UnixNano()),
+						RoomID:     roomID,
+						Type:       "system",
+						Content:    fmt.Sprintf("%s 将乌纱帽禅让给了 %s", client.name, targetClient.name),
+						Timestamp:  time.Now().UnixMilli(),
+					}
+					saveChatMessage(sysMsg)
+					broadcastChatMessage(roomID, sysMsg)
+				}
+				continue
+			}
+
+			if adminData.Action == "set_admin" || adminData.Action == "remove_admin" {
+				if !isSuper {
+					_ = writeMessage(client, ws, websocket.TextMessage, []byte(`{"type":"error","message":"仅超级管理员(腐竹)有权限执行此操作"}`))
+					continue
+				}
+				roomsMutex.Lock()
+				targetClient := rooms[roomID][adminData.TargetID]
+				if targetClient != nil {
+					targetClient.isAdmin = (adminData.Action == "set_admin")
+				}
+				roomsMutex.Unlock()
+				broadcastRoomInfo(roomID)
+
+				if targetClient != nil {
+					actionStr := "戴乌纱帽"
+					if adminData.Action == "remove_admin" {
+						actionStr = "贬为平民"
+					}
+					sysMsg := ChatMessage{
+						ID:         fmt.Sprintf("%d", time.Now().UnixNano()),
+						RoomID:     roomID,
+						Type:       "system",
+						Content:    fmt.Sprintf("%s 被 %s", targetClient.name, actionStr),
+						Timestamp:  time.Now().UnixMilli(),
+					}
+					saveChatMessage(sysMsg)
+					broadcastChatMessage(roomID, sysMsg)
+				}
+				continue
+			}
+
 			roomsMutex.Lock()
 			targetClient := rooms[roomID][adminData.TargetID]
 			roomsMutex.Unlock()
 
 			if targetClient == nil {
+				continue
+			}
+
+			// 普通管理员不能操作超级管理员
+			if isAdminIP(targetClient.ip) && !isSuper {
+				_ = writeMessage(client, ws, websocket.TextMessage, []byte(`{"type":"error","message":"无权操作超级管理员"}`))
 				continue
 			}
 

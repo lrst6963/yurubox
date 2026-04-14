@@ -82,6 +82,13 @@
             <button class="chat-menu-item" type="button" @click="customMuteMediaUser(userMenu.user)">自定义禁音(语音/视频)</button>
             <button class="chat-menu-item" type="button" @click="unmuteAllUser(userMenu.user)">解除禁言禁音</button>
             <button class="chat-menu-item" type="button" @click="changeUserName(userMenu.user)">修改名称</button>
+            <template v-if="isSuperAdmin && !userMenu.user?.isSuperAdmin">
+              <button v-if="!userMenu.user?.isAdmin" class="chat-menu-item" type="button" @click="setAdmin(userMenu.user)">戴乌纱帽</button>
+              <button v-else class="chat-menu-item" type="button" @click="removeAdmin(userMenu.user)">贬为平民</button>
+            </template>
+            <template v-if="isAdmin && !isSuperAdmin && !userMenu.user?.isAdmin && !userMenu.user?.isSuperAdmin">
+              <button class="chat-menu-item" type="button" @click="transferAdmin(userMenu.user)">禅让乌纱帽</button>
+            </template>
           </div>
         </div>
 
@@ -172,6 +179,9 @@ const openUserMenu = (event: MouseEvent | TouchEvent, user: RoomUser) => {
   if (!currentUser || !currentUser.isAdmin) return
   if (user.id === clientId) return
 
+  // 普通管理员不能操作超级管理员
+  if (user.isSuperAdmin && !currentUser.isSuperAdmin) return
+
   event.preventDefault()
   
   let x = 0
@@ -216,6 +226,9 @@ const startUserLongPress = (event: TouchEvent, user: RoomUser) => {
   const currentUser = currentRoomUsers.value.find(u => u.id === clientId)
   if (!currentUser || !currentUser.isAdmin) return
   if (user.id === clientId) return
+
+  // 普通管理员不能操作超级管理员
+  if (user.isSuperAdmin && !currentUser.isSuperAdmin) return
 
   if (userLongPressTimer) clearTimeout(userLongPressTimer)
   userLongPressTimer = window.setTimeout(() => {
@@ -271,6 +284,36 @@ const customMuteMediaUser = (user: RoomUser | null) => {
 const unmuteAllUser = (user: RoomUser | null) => {
   if (!user || !controlWs || !isSocketOpen(controlWs)) return
   controlWs.send(JSON.stringify({ type: 'admin_action', action: 'unmute_all', targetID: user.id }))
+  closeUserMenu()
+}
+
+const isSuperAdmin = computed(() => {
+  const currentUser = currentRoomUsers.value.find(u => u.id === clientId)
+  return !!currentUser?.isSuperAdmin
+})
+
+const isAdmin = computed(() => {
+  const currentUser = currentRoomUsers.value.find(u => u.id === clientId)
+  return !!currentUser?.isAdmin
+})
+
+const transferAdmin = (user: RoomUser | null) => {
+  if (!user || !controlWs || !isSocketOpen(controlWs)) return
+  if (confirm(`确定禅让乌纱帽给 ${user.name || user.ip} 吗？\n禅让后你将成为庶民`)) {
+    controlWs.send(JSON.stringify({ type: 'admin_action', action: 'transfer_admin', targetID: user.id }))
+    closeUserMenu()
+  }
+}
+
+const setAdmin = (user: RoomUser | null) => {
+  if (!user || !controlWs || !isSocketOpen(controlWs)) return
+  controlWs.send(JSON.stringify({ type: 'admin_action', action: 'set_admin', targetID: user.id }))
+  closeUserMenu()
+}
+
+const removeAdmin = (user: RoomUser | null) => {
+  if (!user || !controlWs || !isSocketOpen(controlWs)) return
+  controlWs.send(JSON.stringify({ type: 'admin_action', action: 'remove_admin', targetID: user.id }))
   closeUserMenu()
 }
 
@@ -421,10 +464,8 @@ const {
   () => currentRoomId,
   () => clientId,
   () => controlWs,
-  () => {
-    const user = currentRoomUsers.value.find(u => u.id === clientId)
-    return user ? (user.isAdmin === true) : false
-  },
+  () => currentRoomUsers.value.find(u => u.id === clientId),
+  (id: string) => currentRoomUsers.value.find(u => u.id === id),
   logMsg
 )
 
@@ -446,7 +487,15 @@ const toggleNoiseSuppression = async (value: boolean) => {
   }
 }
 
-const formatRoomUserLabel = (user: RoomUser) => `${normalizeDisplayName(user.name || '')}(${user.ip})`
+const formatRoomUserLabel = (user: RoomUser) => {
+  let role = ''
+  if (user.isSuperAdmin) {
+    role = '(腐竹)'
+  } else if (user.isAdmin) {
+    role = '(管理员)'
+  }
+  return `${normalizeDisplayName(user.name || '')}(${user.ip})${role}`
+}
 
 const editDisplayName = () => {
   const nextName = window.prompt('请输入昵称（最多20字）', displayName.value === '未命名' ? '' : displayName.value)
@@ -835,6 +884,7 @@ onBeforeUnmount(() => {
   flex-direction: column;
   max-width: 80%;
   align-self: flex-start;
+  width: fit-content;
 }
 
 .chat-message-self {
@@ -861,6 +911,7 @@ onBeforeUnmount(() => {
   color: var(--md-sys-color-on-surface);
   word-break: break-word;
   white-space: pre-wrap;
+  width: fit-content;
 }
 
 .chat-message-content-image {
@@ -873,6 +924,7 @@ onBeforeUnmount(() => {
   color: var(--md-sys-color-on-primary-container);
   border-top-left-radius: 12px;
   border-top-right-radius: 4px;
+  align-self: flex-end;
 }
 
 .chat-message-self .chat-message-content-image {

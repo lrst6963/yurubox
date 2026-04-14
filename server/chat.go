@@ -224,14 +224,43 @@ func revokeChatMessage(roomID, clientID, clientIP, messageID string) (ChatMessag
 		if messages[i].ID != messageID {
 			continue
 		}
-		if messages[i].SenderID != clientID && !isAdminIP(clientIP) {
-			return ChatMessage{}, fmt.Errorf("只能撤回自己的消息")
+		
+		if messages[i].SenderID != clientID {
+			isRevokerSuper := isAdminIP(clientIP)
+			var isRevokerAdmin bool
+			roomsMutex.Lock()
+			if cmap, ok := rooms[roomID]; ok {
+				if c, ok := cmap[clientID]; ok {
+					isRevokerAdmin = c.isAdmin || isRevokerSuper
+				}
+			}
+			roomsMutex.Unlock()
+
+			if !isRevokerAdmin {
+				return ChatMessage{}, fmt.Errorf("只能撤回自己的消息")
+			}
+
+			if isAdminIP(messages[i].SenderIP) && !isRevokerSuper {
+				return ChatMessage{}, fmt.Errorf("无权撤回超级管理员的消息")
+			}
+		} else {
+			isRevokerSuper := isAdminIP(clientIP)
+			var isRevokerAdmin bool
+			roomsMutex.Lock()
+			if cmap, ok := rooms[roomID]; ok {
+				if c, ok := cmap[clientID]; ok {
+					isRevokerAdmin = c.isAdmin || isRevokerSuper
+				}
+			}
+			roomsMutex.Unlock()
+
+			if time.Since(time.UnixMilli(messages[i].Timestamp)) > 2*time.Minute && !isRevokerAdmin {
+				return ChatMessage{}, fmt.Errorf("消息已超过两分钟，无法撤回")
+			}
 		}
+
 		if messages[i].Revoked {
 			return ChatMessage{}, fmt.Errorf("消息已经撤回")
-		}
-		if time.Since(time.UnixMilli(messages[i].Timestamp)) > 2*time.Minute && !isAdminIP(clientIP) {
-			return ChatMessage{}, fmt.Errorf("消息已超过两分钟，无法撤回")
 		}
 
 		filesToDelete := getMessageUploadFilenames(messages[i])

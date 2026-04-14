@@ -58,8 +58,9 @@
           label="同步QQ头像"
           type="number"
           supporting-text="输入QQ号以显示头像，不填则不使用"
-          :value="qqNumber"
-          @change="$emit('update:qqNumber', ($event.target as HTMLInputElement).value)"
+          :value="localQQNumber"
+          @input="localQQNumber = ($event.target as HTMLInputElement).value"
+          @change="$emit('update:qqNumber', localQQNumber)"
         ></md-outlined-text-field>
       </div>
 
@@ -164,9 +165,9 @@
 </style>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, watch } from 'vue'
 
-defineProps<{
+const props = defineProps<{
   userCount: number
   showLogs: boolean
   noiseSuppression: boolean
@@ -183,6 +184,11 @@ defineProps<{
   colorTheme: string
   isLocalMediaMuted?: boolean
 }>()
+
+const localQQNumber = ref(props.qqNumber)
+watch(() => props.qqNumber, (newVal) => {
+  localQQNumber.value = newVal
+})
 defineEmits<{
   (e: 'toggleLogs'): void
   (e: 'leaveRoom'): void

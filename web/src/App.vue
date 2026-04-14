@@ -106,6 +106,7 @@
             :chatMessages="chatMessages"
             :chatInput="chatInput"
             :isLocalTextMuted="isLocalTextMuted"
+            :localTextMutedCountdown="localTextMutedCountdown"
             @update:chatInput="chatInput = $event"
             :pendingImages="pendingImages"
             :messageMenu="messageMenu"
@@ -164,6 +165,21 @@ import { useLogs } from './composables/useLogs'
 const roomKey = ref('')
 const isInRoom = ref(false)
 const isConnecting = ref(false)
+const currentTime = ref(Date.now())
+let timeInterval: number | null = null
+
+onMounted(() => {
+  timeInterval = window.setInterval(() => {
+    // 收到 serverTime 后，我们让 currentTime.value 自增 1 秒，从而维持和服务器的倒计时一致
+    currentTime.value += 1000
+  }, 1000)
+})
+
+onBeforeUnmount(() => {
+  if (timeInterval) {
+    clearInterval(timeInterval)
+  }
+})
 
 // --- 用户管理菜单 ---
 const userMenu = ref({
@@ -373,12 +389,19 @@ const getAvatarUrl = (qq: string) => qq.trim() ? `http://q2.qlogo.cn/headimg_dl?
 
 const isLocalMediaMuted = computed(() => {
   const user = currentRoomUsers.value.find(u => u.id === clientId)
-  return !!user?.mediaMuted
+  return !!user?.mediaMuted && !!user?.mediaMutedUntil && user.mediaMutedUntil > currentTime.value
 })
 
 const isLocalTextMuted = computed(() => {
   const user = currentRoomUsers.value.find(u => u.id === clientId)
-  return !!user?.textMuted
+  return !!user?.textMuted && !!user?.mutedUntil && user.mutedUntil > currentTime.value
+})
+
+const localTextMutedCountdown = computed(() => {
+  if (!isLocalTextMuted.value) return 0
+  const user = currentRoomUsers.value.find(u => u.id === clientId)
+  if (!user || !user.mutedUntil) return 0
+  return Math.max(0, Math.ceil((user.mutedUntil - currentTime.value) / 1000))
 })
 
 const {
@@ -429,6 +452,7 @@ const {
   () => controlWs,
   () => mediaWs,
   () => cryptoKey,
+  () => currentTime.value,
   logMsg
 )
 
@@ -683,6 +707,10 @@ const connectMediaChannel = (roomId: string) => {
 }
 
 const updateRoomInfo = (data: any) => {
+  if (data.serverTime) {
+    // 收到 room_info 时，同步客户端时间，避免与服务端时间出现偏差导致倒计时不准
+    currentTime.value = data.serverTime
+  }
   currentRoomUsers.value = Array.isArray(data.users) ? data.users : []
   syncUsersWithVideoFromRoomInfo()
 

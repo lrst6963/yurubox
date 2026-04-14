@@ -11,6 +11,7 @@ export function useMediaControl(
   getControlWs: () => WebSocket | null,
   getMediaWs: () => WebSocket | null,
   getCryptoKey: () => CryptoKey | null,
+  getCurrentTime: () => number,
   logMsg: (msg: string) => void
 ) {
   const audioEngine = new AudioEngine(logMsg)
@@ -68,7 +69,7 @@ export function useMediaControl(
     if (userCount.value < 2) return true
     if (!mediaChannelReady.value) return true
     const localUser = getCurrentRoomUsers().find(u => u.id === getClientId())
-    if (localUser?.mediaMuted) return true
+    if (localUser?.mediaMuted && localUser.mediaMutedUntil && localUser.mediaMutedUntil > getCurrentTime()) return true
     return false
   })
 

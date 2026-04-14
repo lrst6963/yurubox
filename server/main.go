@@ -49,16 +49,18 @@ var (
 
 // UserInfo 表示房间内的单个用户信息
 type UserInfo struct {
-	ID           string `json:"id"`
-	IP           string `json:"ip"`
-	Name         string `json:"name"`
-	Avatar       string `json:"avatar"`
-	Status       string `json:"status"`
-	Video        bool   `json:"video"`
-	IsAdmin      bool   `json:"isAdmin"`
-	IsSuperAdmin bool   `json:"isSuperAdmin"`
-	MediaMuted   bool   `json:"mediaMuted"`
-	TextMuted    bool   `json:"textMuted"`
+	ID              string `json:"id"`
+	IP              string `json:"ip"`
+	Name            string `json:"name"`
+	Avatar          string `json:"avatar"`
+	Status          string `json:"status"`
+	Video           bool   `json:"video"`
+	IsAdmin         bool   `json:"isAdmin"`
+	IsSuperAdmin    bool   `json:"isSuperAdmin"`
+	MediaMuted      bool   `json:"mediaMuted"`
+	TextMuted       bool   `json:"textMuted"`
+	MutedUntil      int64  `json:"mutedUntil"`
+	MediaMutedUntil int64  `json:"mediaMutedUntil"`
 }
 
 func isAdminIP(ipStr string) bool {
@@ -74,9 +76,10 @@ func isAdminIP(ipStr string) bool {
 
 // RoomInfo 存储下发给客户端的房间统计信息
 type RoomInfo struct {
-	Type  string     `json:"type"`
-	Count int        `json:"count"`
-	Users []UserInfo `json:"users"`
+	Type       string     `json:"type"`
+	Count      int        `json:"count"`
+	ServerTime int64      `json:"serverTime"`
+	Users      []UserInfo `json:"users"`
 }
 
 func broadcastRoomInfo(roomID string) {
@@ -95,24 +98,27 @@ func broadcastRoomInfo(roomID string) {
 		}
 		recipients = append(recipients, c)
 		users = append(users, UserInfo{
-			ID:           c.id,
-			IP:           c.ip,
-			Name:         c.name,
-			Avatar:       c.avatar,
-			Status:       c.status,
-			Video:        c.hasVideo,
-			IsAdmin:      c.isAdmin || isAdminIP(c.ip),
-			IsSuperAdmin: isAdminIP(c.ip),
-			MediaMuted:   c.mediaMutedUntil > time.Now().UnixMilli(),
-			TextMuted:    c.mutedUntil > time.Now().UnixMilli(),
+			ID:              c.id,
+			IP:              c.ip,
+			Name:            c.name,
+			Avatar:          c.avatar,
+			Status:          c.status,
+			Video:           c.hasVideo,
+			IsAdmin:         c.isAdmin || isAdminIP(c.ip),
+			IsSuperAdmin:    isAdminIP(c.ip),
+			MediaMuted:      c.mediaMutedUntil > time.Now().UnixMilli(),
+			TextMuted:       c.mutedUntil > time.Now().UnixMilli(),
+			MutedUntil:      c.mutedUntil,
+			MediaMutedUntil: c.mediaMutedUntil,
 		})
 	}
 	roomsMutex.Unlock()
 
 	info := RoomInfo{
-		Type:  "room_info",
-		Count: len(users),
-		Users: users,
+		Type:       "room_info",
+		Count:      len(users),
+		ServerTime: time.Now().UnixMilli(),
+		Users:      users,
 	}
 
 	msg, _ := json.Marshal(info)
@@ -442,8 +448,10 @@ func removeControlClient(roomID, clientID string, conn *websocket.Conn) {
 		client := clientsMap[clientID]
 		if client != nil && client.controlConn == conn {
 			mediaConn = client.mediaConn
-			delete(clientsMap, clientID)
-			if len(clientsMap) == 0 {
+			client.controlConn = nil
+			client.mediaConn = nil
+
+			if countActiveClients(clientsMap) == 0 {
 				delete(rooms, roomID)
 			}
 			removed = true

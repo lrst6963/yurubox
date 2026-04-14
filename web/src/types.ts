@@ -9,6 +9,8 @@ export type RoomUser = {
   isSuperAdmin?: boolean
   mediaMuted?: boolean
   textMuted?: boolean
+  mutedUntil?: number
+  mediaMutedUntil?: number
 }
 
 export type ChatMessage = {

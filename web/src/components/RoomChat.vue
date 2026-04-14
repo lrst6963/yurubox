@@ -8,6 +8,9 @@
         <div v-if="msg.type === 'system'" class="chat-message-system">
           <span>{{ msg.content }}</span>
         </div>
+        <div v-else-if="msg.revoked" class="chat-message-system">
+          <span>{{ msg.senderId === clientId ? '你' : getSenderDisplayName(msg) }} 撤回了一条消息</span>
+        </div>
         <div
           v-else
           class="chat-message"
@@ -27,13 +30,6 @@
             <span class="chat-time">{{ new Date(msg.timestamp).toLocaleTimeString() }}</span>
           </div>
           <div
-            v-if="msg.revoked"
-            class="chat-message-revoked"
-          >
-            {{ msg.senderId === clientId ? '你撤回了一条消息' : '对方撤回了一条消息' }}
-          </div>
-          <div
-            v-else
             class="chat-message-content"
             :class="{ 'chat-message-content-image': isImageLikeMessage(msg) }"
           >
@@ -86,7 +82,7 @@
       
       <md-outlined-text-field
         class="chat-input-field"
-        :placeholder="isLocalTextMuted ? '您已被禁言' : '输入消息(上限1000字)...'"
+        :placeholder="isLocalTextMuted ? `禁言中(${localTextMutedCountdown}s)` : '输入消息(上限1000字)...'"
         :value="chatInput"
         @input="$emit('update:chatInput', ($event.target as HTMLInputElement).value)"
         @keyup.enter="sendTextMessage"
@@ -134,6 +130,7 @@ const props = defineProps<{
   chatMessages: ChatMessage[]
   chatInput: string
   isLocalTextMuted: boolean
+  localTextMutedCountdown?: number
   pendingImages: PendingImage[]
   messageMenu: MessageMenuState
 
